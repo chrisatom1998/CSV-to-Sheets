@@ -84,7 +84,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const chkIncludeHeader = document.getElementById('chk-include-header');
   const chkCleanNumbers = document.getElementById('chk-clean-numbers');
   const chkNormalizeDates = document.getElementById('chk-normalize-dates');
-  const chkTotals = document.getElementById('chk-totals');
   const btnCopy = document.getElementById('btn-copy');
   const btnDownloadTsv = document.getElementById('btn-download-tsv');
   const btnDownloadCsv = document.getElementById('btn-download-csv');
@@ -105,6 +104,28 @@ document.addEventListener('DOMContentLoaded', () => {
   let detectedDelim = ','; // delimiter used for the current file
   let loadedText = '';   // raw text of the loaded file (for opt-in persistence)
   let loadedName = '';   // name of the loaded file
+
+  // ----------------- Drag-reorder placeholder -----------------
+  // During a header-bubble drag, a grey dashed ghost sits at the insertion
+  // point so the user can see where the bubble will land on drop.
+  let _dragPlaceholder = null;   // the single placeholder DOM element
+  let _dragSourceIndex = -1;     // index of the bubble currently being dragged
+
+  function getDragPlaceholder(text) {
+    if (!_dragPlaceholder) {
+      _dragPlaceholder = document.createElement('div');
+      _dragPlaceholder.className = 'drag-placeholder';
+    }
+    _dragPlaceholder.textContent = text;
+    return _dragPlaceholder;
+  }
+
+  function removeDragPlaceholder() {
+    if (_dragPlaceholder && _dragPlaceholder.parentNode) {
+      _dragPlaceholder.parentNode.removeChild(_dragPlaceholder);
+    }
+    _dragSourceIndex = -1;
+  }
 
   // ----------------- CSV parsing -----------------
   // CSV parsing, delimiter detection, and header-name matching are pure,
@@ -1138,7 +1159,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // True when a totals row is requested and there's something to total.
   function hasTotals() {
-    return chkTotals.checked && getTargets().length > 0 && csvHeaders.length > 0;
+    return false;
   }
 
   function columnHasNumericValue(rows, index) {
@@ -1378,7 +1399,6 @@ document.addEventListener('DOMContentLoaded', () => {
       includeHeader: chkIncludeHeader.checked,
       skipRows: getSkip(),
       cleanNumbers: chkCleanNumbers.checked,
-      totals: chkTotals.checked,
       normalizeDates: chkNormalizeDates.checked,
       rememberFile: chkRememberFile.checked,
       delimiterMode: selectDelimiter.value,
@@ -1511,11 +1531,34 @@ document.addEventListener('DOMContentLoaded', () => {
         bubble.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', String(index));
+        _dragSourceIndex = index;
+        // Insert placeholder next to the dragged bubble on the next frame
+        // (requestAnimationFrame ensures the browser captures the drag image first).
+        requestAnimationFrame(() => {
+          const ph = getDragPlaceholder(target);
+          bubble.after(ph);
+        });
       });
-      bubble.addEventListener('dragend', () => bubble.classList.remove('dragging'));
-      bubble.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
+      bubble.addEventListener('dragend', () => {
+        bubble.classList.remove('dragging');
+        removeDragPlaceholder();
+      });
+      bubble.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (_dragSourceIndex === index) return; // hovering over self — no-op
+        const ph = getDragPlaceholder(targets[_dragSourceIndex] || '');
+        const rect = bubble.getBoundingClientRect();
+        const midX = rect.left + rect.width / 2;
+        if (e.clientX < midX) {
+          bubble.before(ph);
+        } else {
+          bubble.after(ph);
+        }
+      });
       bubble.addEventListener('drop', e => {
         e.preventDefault();
+        removeDragPlaceholder();
         reorderTargets(Number(e.dataTransfer.getData('text/plain')), index);
       });
 
@@ -1633,7 +1676,6 @@ document.addEventListener('DOMContentLoaded', () => {
   inputTargetHeaders.addEventListener('input', () => { markManualSetup(); renderMapping(); renderPreview(); persist(); updateChipActive(); });
   chkIncludeHeader.addEventListener('change', () => { renderPreview(); persist(); });
   chkCleanNumbers.addEventListener('change', () => { renderPreview(); persist(); });
-  chkTotals.addEventListener('change', () => { renderPreview(); persist(); });
   chkNormalizeDates.addEventListener('change', () => { renderPreview(); persist(); });
   [selectSortBy, selectSortDir, selectGroupBy, selectFilterBy, selectFilterOp].forEach(sel => {
     sel.addEventListener('change', () => {
@@ -1654,7 +1696,7 @@ document.addEventListener('DOMContentLoaded', () => {
         [
           'targetHeaders', 'columnMapping', 'activeMappingPreset',
           'mappingPresets', 'requiredHeaders', 'firstRowHeader', 'includeHeader',
-          'headerOptions', 'skipRows', 'cleanNumbers', 'normalizeDates', 'totals', 'rememberFile',
+          'headerOptions', 'skipRows', 'cleanNumbers', 'normalizeDates', 'rememberFile',
           'delimiterMode', 'sortBy', 'sortByTarget', 'sortDir', 'groupBy', 'groupByTarget',
           'filterBy', 'filterByTarget', 'filterOp', 'filterValue',
           'csvText', 'csvFileName', 'csvDelim'
@@ -1674,7 +1716,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (Array.isArray(data.headerOptions)) headerOptions = data.headerOptions.slice();
       if (typeof data.skipRows === 'number') inputSkipRows.value = String(data.skipRows);
       if (typeof data.cleanNumbers === 'boolean') chkCleanNumbers.checked = data.cleanNumbers;
-      if (typeof data.totals === 'boolean') chkTotals.checked = data.totals;
       if (typeof data.normalizeDates === 'boolean') chkNormalizeDates.checked = data.normalizeDates;
       if (typeof data.rememberFile === 'boolean') chkRememberFile.checked = data.rememberFile;
       if (['auto', ',', 'tab', ';', '|'].includes(data.delimiterMode)) selectDelimiter.value = data.delimiterMode;

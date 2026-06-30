@@ -512,7 +512,27 @@ textarea:focus, select:focus {
   transition: box-shadow .15s, transform .08s, opacity .12s;
 }
 .header-bubble:active { cursor: grabbing; }
-.header-bubble.dragging { opacity: .5; }
+.header-bubble.dragging { opacity: .25; }
+/* Grey dashed ghost shown at the insertion point during a drag reorder */
+.drag-placeholder {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1.5px dashed var(--g-grey-400);
+  background: color-mix(in srgb, var(--g-grey-300) 30%, transparent);
+  color: var(--g-grey-500);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  pointer-events: none;
+  white-space: nowrap;
+  animation: placeholder-in .15s ease both;
+}
+@keyframes placeholder-in {
+  from { opacity: 0; transform: scale(.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
 .header-bubble.required { box-shadow: 0 0 0 2px #fff, 0 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent); }
 .header-bubble:focus-visible {
   outline: 2px solid var(--g-grey-900);
