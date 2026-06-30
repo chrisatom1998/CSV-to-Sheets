@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="fonts/fonts.css">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="bg-mesh" aria-hidden="true"></div>
+
+  <div class="app">
+    <header class="masthead">
+      <img class="logo" src="gtech_logo_horizontal.png" alt="gTech ads">
+      <span class="tool-tag">&lt;csv→sheets/&gt;</span>
+    </header>
+
+    <div class="brand-ribbon" aria-hidden="true">
+      <span style="--c:var(--g-blue)"></span>
+      <span style="--c:var(--g-red)"></span>
+      <span style="--c:var(--g-yellow)"></span>
+      <span style="--c:var(--g-green)"></span>
+    </div>
+
+    <p class="lede">Map a CSV onto headers you choose, then paste straight into Sheets.</p>
+
+    <!-- 1 · Upload (blue) -->
+    <section class="module collapsible" id="module-upload" style="--accent:var(--g-blue)">
+      <div class="module-head" id="head-upload" role="button" tabindex="0"
+           aria-expanded="true" aria-controls="body-upload">
+        <span class="module-num">1</span>
+        <h2>Upload CSV</h2>
+        <span class="module-summary" id="upload-summary"></span>
+        <svg class="collapse-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="module-body" id="body-upload">
+        <label class="dropzone" id="file-drop">
+          <input type="file" id="file-input"
+            accept=".csv,text/csv,.tsv,text/tab-separated-values" hidden>
+          <svg viewBox="0 0 24 24" class="dz-icon" aria-hidden="true">
+            <path d="M12 16V4m0 0l-4 4m4-4l4 4" />
+            <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+          </svg>
+          <span id="file-label">Drop a file or click to browse</span>
+        </label>
+        <button type="button" id="btn-clear-file" class="clear-file-btn hidden">
+          <svg viewBox="0 0 24 24" class="clear-icon" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+          Remove file
+        </button>
+        <label class="switch-row">
+          <input type="checkbox" id="chk-first-row-header" checked>
+          <span class="track"></span>
+          <span class="switch-label">First row is the header</span>
+        </label>
+        <label class="num-row">
+          <span class="num-label">Skip first</span>
+          <input type="number" id="input-skip-rows" min="0" value="0" inputmode="numeric">
+          <span class="num-label">rows above the header</span>
+        </label>
+        <div class="delimiter-row">
+          <label class="num-label" for="select-delimiter">Delimiter</label>
+          <select id="select-delimiter" class="delimiter-select">
+            <option value="auto">Auto detect</option>
+            <option value=",">Comma</option>
+            <option value="tab">Tab</option>
+            <option value=";">Semicolon</option>
+            <option value="|">Pipe</option>
+          </select>
+        </div>
+        <label class="switch-row">
+          <input type="checkbox" id="chk-remember-file">
+          <span class="track"></span>
+          <span class="switch-label">Remember last file</span>
+        </label>
+        <div id="csv-info" class="readout hidden" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- 2 · Headers (red) -->
+    <section class="module collapsible" id="module-headers" style="--accent:var(--g-red)">
+      <div class="module-head" id="head-headers" role="button" tabindex="0"
+           aria-expanded="true" aria-controls="body-headers">
+        <span class="module-num">2</span>
+        <h2>Your sheet headers</h2>
+        <span class="module-summary" id="headers-summary"></span>
+        <svg class="collapse-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="module-body" id="body-headers">
+        <!-- One unified area: selected headers render as red draggable bubbles in
+             column order (drag to reorder the table, Req to require, × to remove);
+             unselected quick-add options follow as grey chips (click to add). -->
+        <div class="presets">
+          <span class="presets-label">Your headers</span>
+          <div id="preset-chips" class="chip-row"></div>
+          <span class="presets-hint">Click a grey chip to add · drag the red bubbles to reorder the columns</span>
+        </div>
+
+        <!-- Text entry: the source of truth, shown on its own at first and tucked
+             behind "Edit as text" once pills exist. -->
+        <div class="text-edit" id="headers-text-edit">
+          <textarea id="input-target-headers" rows="2"
+            placeholder="App Name, Estimated Earnings, Impressions"></textarea>
+        </div>
+
+        <div class="headers-toolbar">
+          <button id="btn-toggle-text" type="button" class="link-btn hidden" aria-expanded="false">
+            Edit as text
+          </button>
+          <button id="btn-paste-headers" type="button" class="paste-btn"
+            title="Paste a header row copied from your sheet (tabs or new lines)">
+            <svg viewBox="0 0 24 24" class="paste-icon" aria-hidden="true">
+              <rect x="8" y="2" width="8" height="4" rx="1" />
+              <path d="M9 4H6a2 2 0 00-2 2v13a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-3" />
+            </svg>
+            Paste headers from sheet
+          </button>
+        </div>
+
+        <div class="mapping-presets">
+          <label class="preset-select-label" for="select-mapping-preset">Preset</label>
+          <select id="select-mapping-preset" class="preset-select">
+            <option value="">Current setup</option>
+          </select>
+          <button id="btn-save-preset" type="button" class="mini-btn">Save</button>
+          <button id="btn-delete-preset" type="button" class="mini-btn danger" disabled>Delete</button>
+          <button id="btn-preset-menu" type="button" class="mini-btn icon-btn"
+            aria-haspopup="true" aria-expanded="false" aria-controls="preset-menu"
+            aria-label="More preset actions" title="More preset actions">⋯</button>
+          <input type="file" id="input-import-presets" accept="application/json,.json" hidden>
+        </div>
+        <div id="preset-menu" class="preset-menu hidden" role="menu" aria-label="Preset actions">
+          <button id="btn-export-presets" type="button" class="menu-item" role="menuitem">Export presets…</button>
+          <button id="btn-import-presets" type="button" class="menu-item" role="menuitem">Import presets…</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3 · Map (yellow) -->
+    <section class="module" style="--accent:var(--g-yellow)">
+      <div class="module-head">
+        <span class="module-num">3</span>
+        <h2>Map columns</h2>
+      </div>
+      <div id="mapping-health" class="mapping-health hidden"></div>
+      <div id="mapping-list" class="mapping-list">
+        <div class="empty-msg">Upload a CSV and enter headers to begin mapping.</div>
+      </div>
+    </section>
+
+    <!-- 4 · Copy (green) -->
+    <section class="module" style="--accent:var(--g-green)">
+      <div class="module-head">
+        <span class="module-num">4</span>
+        <h2>Copy &amp; paste</h2>
+      </div>
+      <div class="subhead">Arrange rows</div>
+      <div class="order-controls">
+        <div class="order-row">
+          <label class="order-label" for="select-sort-by">Sort by</label>
+          <select id="select-sort-by" class="order-select">
+            <option value="none">— original order —</option>
+          </select>
+          <select id="select-sort-dir" class="order-dir" aria-label="Sort direction">
+            <option value="asc">↑ Asc</option>
+            <option value="desc">↓ Desc</option>
+          </select>
+        </div>
+        <div class="order-row">
+          <label class="order-label" for="select-group-by">Group by</label>
+          <select id="select-group-by" class="order-select">
+            <option value="none">— no grouping —</option>
+          </select>
+        </div>
+        <div class="hint">Group clusters rows with the same value together; sort orders rows within each group.</div>
+      </div>
+      <div class="filter-controls">
+        <div class="filter-row">
+          <label class="order-label" for="select-filter-by">Filter</label>
+          <select id="select-filter-by" class="order-select">
+            <option value="none">No filter</option>
+          </select>
+          <select id="select-filter-op" class="order-dir" aria-label="Filter operation">
+            <option value="contains">Contains</option>
+            <option value="equals">Equals</option>
+            <option value="not-equals">Not equals</option>
+            <option value="blank">Blank</option>
+            <option value="not-blank">Not blank</option>
+            <option value="gt">&gt; Greater than</option>
+            <option value="lt">&lt; Less than</option>
+            <option value="gte">&ge; Greater or equal</option>
+            <option value="lte">&le; Less or equal</option>
+          </select>
+        </div>
+        <input type="text" id="input-filter-value" class="filter-value" placeholder="Filter value">
+      </div>
+      <div class="subhead">Format output</div>
+      <div class="toggle-grid">
+        <label class="switch-row" title="Include the target header row at the top">
+          <input type="checkbox" id="chk-include-header" checked>
+          <span class="track"></span>
+          <span class="switch-label">Header row</span>
+        </label>
+        <label class="switch-row" title="Strip $, commas, and spaces so Sheets reads numbers">
+          <input type="checkbox" id="chk-clean-numbers" checked>
+          <span class="track"></span>
+          <span class="switch-label">Clean numbers</span>
+        </label>
+        <label class="switch-row" title="Normalize dates to YYYY-MM-DD">
+          <input type="checkbox" id="chk-normalize-dates">
+          <span class="track"></span>
+          <span class="switch-label">Normalize dates</span>
+        </label>
+        <label class="switch-row" title="Add a totals row summing numeric columns">
+          <input type="checkbox" id="chk-totals">
+          <span class="track"></span>
+          <span class="switch-label">Totals row</span>
+        </label>
+      </div>
+      <div id="mapping-warning" class="mapping-warning hidden" role="status" aria-live="polite"></div>
+      <div class="output-actions">
+        <button id="btn-copy" class="btn-copy" disabled>
+          <svg viewBox="0 0 24 24" class="btn-icon" aria-hidden="true">
+            <rect x="9" y="9" width="11" height="11" rx="2" />
+            <path d="M5 15V5a2 2 0 012-2h10" />
+          </svg>
+          <span class="btn-text">Copy for Google Sheets</span>
+        </button>
+        <button id="btn-download-tsv" class="btn-download-tsv" disabled
+          title="Download the mapped output as a TSV file">
+          <svg viewBox="0 0 24 24" class="btn-icon" aria-hidden="true">
+            <path d="M12 3v12m0 0l-4-4m4 4l4-4" />
+            <path d="M5 19h14" />
+          </svg>
+          <span>TSV</span>
+        </button>
+      </div>
+      <div id="status" class="status" role="status" aria-live="polite"></div>
+      <div id="copy-fallback" class="copy-fallback hidden" aria-live="polite">
+        <div class="fallback-head">
+          <span>Manual copy fallback</span>
+          <button id="btn-dismiss-fallback" type="button" class="mini-btn">Dismiss</button>
+        </div>
+        <textarea id="fallback-tsv" readonly rows="5" spellcheck="false"></textarea>
+        <button id="btn-select-fallback" type="button" class="mini-btn">Select all</button>
+      </div>
+    </section>
+
+    <!-- Preview -->
+    <section class="module preview-card hidden" id="preview-card" style="--accent:var(--g-grey-600)">
+      <div class="module-head">
+        <span class="module-num dot">•</span>
+        <h2>Preview</h2>
+      </div>
+      <div class="preview-wrap">
+        <table id="preview-table"></table>
+      </div>
+      <div id="preview-note" class="preview-note hidden"></div>
+    </section>
+
+    <footer class="foot">gTech ads · clipboard stays on your machine</footer>
+
+    <!-- Sticky compact copy: pinned to the popup bottom, shown once mapping is valid
+         so the user can copy without scrolling back to Step 4. -->
+    <div class="sticky-cta hidden" id="sticky-cta">
+      <button id="btn-copy-sticky" class="btn-copy-sticky">
+        <svg viewBox="0 0 24 24" class="btn-icon" aria-hidden="true">
+          <rect x="9" y="9" width="11" height="11" rx="2" />
+          <path d="M5 15V5a2 2 0 012-2h10" />
+        </svg>
+        <span class="sticky-text">Copy for Sheets</span>
+        <span class="sticky-count" id="sticky-count"></span>
+      </button>
+    </div>
+  </div>
+
+  <script src="transforms.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

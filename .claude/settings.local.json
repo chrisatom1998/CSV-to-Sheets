@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check popup.js)",
+      "Bash(node --check transforms.js)",
+      "Bash(node --check popup.js transforms.js)",
+      "Bash(node --test)"
+    ]
+  },
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true
+  }
+}
