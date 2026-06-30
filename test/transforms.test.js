@@ -345,3 +345,20 @@ test('summarizeRows: labelIndex -1 preserves numeric total columns', () => {
     ['30', '3']
   ]);
 });
+
+const { buildCSV } = require('../transforms.js');
+
+test('buildCSV: normalizes and escapes cells correctly', () => {
+  const matrix = [
+    ['Header 1', 'Header 2', 'Header 3'],
+    ['plain value', 'value, with comma', 'value "with" quotes'],
+    ['value\nwith newline', 'normal', '']
+  ];
+  const expected = [
+    'Header 1,Header 2,Header 3',
+    'plain value,"value, with comma","value ""with"" quotes"',
+    '"value\nwith newline",normal,'
+  ].join('\n');
+  assert.strictEqual(buildCSV(matrix), expected);
+});
+

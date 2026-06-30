@@ -696,7 +696,7 @@ textarea:focus, select:focus {
 /* ---------------- Copy button ---------------- */
 .output-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 9px;
   align-items: stretch;
   margin-top: 13px;
@@ -726,7 +726,7 @@ textarea:focus, select:focus {
 .btn-copy:disabled { background: var(--g-grey-300); color: var(--g-grey-600); box-shadow: none; cursor: not-allowed; }
 .btn-icon { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
-.btn-download-tsv {
+.btn-download-tsv, .btn-download-csv {
   min-width: 76px;
   display: flex;
   align-items: center;
@@ -743,12 +743,12 @@ textarea:focus, select:focus {
   cursor: pointer;
   transition: filter .15s, transform .08s, box-shadow .15s, background .15s;
 }
-.btn-download-tsv:hover:not(:disabled) {
+.btn-download-tsv:hover:not(:disabled), .btn-download-csv:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 16%, #fff);
   box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 20%, transparent);
 }
-.btn-download-tsv:active:not(:disabled) { transform: translateY(1px) scale(.995); }
-.btn-download-tsv:disabled {
+.btn-download-tsv:active:not(:disabled), .btn-download-csv:active:not(:disabled) { transform: translateY(1px) scale(.995); }
+.btn-download-tsv:disabled, .btn-download-csv:disabled {
   border-color: var(--g-grey-300);
   background: var(--g-grey-100);
   color: var(--g-grey-500);
