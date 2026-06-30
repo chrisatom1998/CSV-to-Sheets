@@ -32,7 +32,7 @@ above doesn't reach them.
 | `popup.html` | 4-step modular UI (Upload → Headers → Map → Copy) + preview. Steps 1 & 2 have **collapsible heads** (`.collapsible` / `.module-head[role=button]` + `.module-summary` + `.collapse-chevron`). A **sticky copy bar** (`#sticky-cta` / `#btn-copy-sticky`) is pinned to the popup bottom. Element IDs are the contract with `popup.js` — keep them stable. |
 | `popup.css` | Material-modular light theme. The gTech logo's four-color ring is the palette system: step 1 blue, 2 red, 3 yellow, 4 green (`--accent` per `.module`). |
 | `popup.js` | All DOM logic: CSV parsing, delimiter detection, skip-rows/header handling, quick-add header chips, column mapping, number cleaning, TSV build, clipboard copy, persistence. Pure transforms live in `transforms.js`. |
-| `transforms.js` | **Pure, DOM-free** data transforms shared by the popup and the Node tests: `parseCSV(text, delim)` (RFC-4180-ish), `detectDelimiter(text)` (multi-row sampling sniffer), `cleanNumeric(value)` (normalize currency/thousands; leave percents/text untouched), `splitRows(rawRows, {skip, firstRowHeader})`, `splitTargets(value)`, plus header-matching helpers `autoMatchIndex(target, csvHeaders)` (returns a column **index**, -1 if none) and `headerMatchConfidence(target, header)` (`'exact'`/`'similar'`/`'none'`). Exposed as `globalThis.Transforms` and `module.exports`; loaded via `<script>` before `popup.js`. |
+| `transforms.js` | **Pure, DOM-free** data transforms shared by the popup and the Node tests: `parseCSV(text, delim)` (RFC-4180-ish), `detectDelimiter(text)` (multi-row sampling sniffer), `cleanNumeric(value)` (normalize currency/thousands; leave percents/text untouched), `splitRows(rawRows, {skip, firstRowHeader})`, `splitTargets(value)`, `toCSV(matrix)` (RFC-4180 CSV encoding, the inverse of `parseCSV`), plus header-matching helpers `autoMatchIndex(target, csvHeaders)` (returns a column **index**, -1 if none) and `headerMatchConfidence(target, header)` (`'exact'`/`'similar'`/`'none'`). Exposed as `globalThis.Transforms` and `module.exports`; loaded via `<script>` before `popup.js`. |
 | `test/transforms.test.js` | Node `node:test` unit tests for `transforms.js`. Run `node --test`. No deps, offline. |
 | `gtech_logo_horizontal.png` | Brand logo, background made transparent. |
 | `icons/` | Extension icons (16/32/48/128) registered in `manifest.json` under both `icons` and `action.default_icon`. **Dark-tile design** (deep slate squircle `#1E2436`→`#11151F` so the icon stays visible on a white toolbar) + enlarged gTech four-color ring + bold white "CSV" wordmark centered inside it. **Size-specific**: 16px is ring-only (text is illegible at that size); 32/48/128 include the CSV wordmark. Regenerate with `python3 icons/_gen_icons.py` — it composes the SVG ring + Outfit text in HTML and renders/downscales via Playwright+PIL (LANCZOS). |
@@ -57,11 +57,15 @@ above doesn't reach them.
    and a confidence **badge** (Exact / Similar / Manual / Blank, via
    `Transforms.headerMatchConfidence`) sits beside each row so users can spot a wrong or
    blank mapping before copying.
-4. `buildMatrix()` / `buildTSV()` reorder/subset CSV columns to the target headers (by the
-   stored column index) and
-   emit tab-separated text. When "Clean numbers" is on, each mapped **data** cell is run
-   through `Transforms.cleanNumeric` (header row excluded). The `#btn-copy` click handler
-   writes the TSV via `navigator.clipboard.writeText`.
+4. `buildMatrix()` reorders/subsets CSV columns to the target headers (by the stored
+   column index); `buildTSV()` joins it with tabs/newlines and `Transforms.toCSV()` joins
+   it as RFC-4180 CSV (comma-separated, `""`-escaped quoting, CRLF rows) — both read the
+   same mapped matrix, so they always cover exactly the mapped columns. When "Clean
+   numbers" is on, each mapped **data** cell is run through `Transforms.cleanNumeric`
+   (header row excluded). The `#btn-copy` click handler writes the TSV via
+   `navigator.clipboard.writeText`; `#btn-download-tsv` / `#btn-download-csv` save the
+   same matrix as a `.tsv` / `.csv` file (`downloadTSV` / `downloadCSV`, named
+   `<source-file>-mapped.<ext>`).
 5. Settings persist via `chrome.storage.local` (`persist` / `restore`): `targetHeaders`,
    `columnMapping`, `activeMappingPreset`, `mappingPresets`, `firstRowHeader`,
    `includeHeader`, `headerOptions`, `skipRows`, `cleanNumbers`, `sortBy`,
@@ -75,8 +79,11 @@ above doesn't reach them.
 
 ## Key conventions
 
-- **Output is TSV** (`\t` separated, `\n` rows). Google Sheets splits a pasted TSV into
-  cells. Cell values are sanitized (tabs/newlines → spaces) so the grid never breaks.
+- **Copy output is TSV** (`\t` separated, `\n` rows) — Google Sheets splits a pasted TSV
+  into cells. Cell values are sanitized (tabs/newlines → spaces) so the grid never breaks.
+  The **TSV / CSV download buttons** (Copy module) save the same mapped columns as a file
+  instead of the clipboard — CSV via `Transforms.toCSV` (comma-separated, quoted per
+  RFC-4180) for opening elsewhere (Excel, re-importing, etc.).
 - **Unified header chips** (`renderPresets`, container `#preset-chips`): one row that is
   both the selection palette and the column-order editor. **Selected** headers render first
   as red, draggable **`.header-bubble`**s in output-column order — dragging one calls

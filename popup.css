@@ -696,7 +696,7 @@ textarea:focus, select:focus {
 /* ---------------- Copy button ---------------- */
 .output-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 9px;
   align-items: stretch;
   margin-top: 13px;

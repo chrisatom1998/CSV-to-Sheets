@@ -87,6 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const chkTotals = document.getElementById('chk-totals');
   const btnCopy = document.getElementById('btn-copy');
   const btnDownloadTsv = document.getElementById('btn-download-tsv');
+  const btnDownloadCsv = document.getElementById('btn-download-csv');
   const copyFallback = document.getElementById('copy-fallback');
   const fallbackTsv = document.getElementById('fallback-tsv');
   const btnSelectFallback = document.getElementById('btn-select-fallback');
@@ -1257,6 +1258,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const canOutput = csvRows.length > 0 && getTargets().length > 0;
     btnCopy.disabled = !canOutput;
     btnDownloadTsv.disabled = !canOutput;
+    btnDownloadCsv.disabled = !canOutput;
     if (!canOutput) hideCopyFallback();
     renderMappingWarning();
     updateStickyCta();
@@ -1285,27 +1287,37 @@ document.addEventListener('DOMContentLoaded', () => {
     fallbackTsv.select();
   }
 
-  function outputFileName() {
+  function outputFileName(ext) {
     const base = (loadedName || 'csv-to-sheets')
       .replace(/\.[^.]+$/, '')
       .replace(/[^a-z0-9._-]+/gi, '-')
       .replace(/^-+|-+$/g, '') || 'csv-to-sheets';
-    return `${base}-mapped.tsv`;
+    return `${base}-mapped.${ext}`;
   }
 
-  function downloadTSV() {
-    const tsv = buildTSV();
-    const blob = new Blob([tsv], { type: 'text/tab-separated-values;charset=utf-8' });
+  function downloadBlob(text, mimeType, fileName) {
+    const blob = new Blob([text], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = outputFileName();
+    a.download = fileName;
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 0);
     const n = buildMatrix._lastOutputDataCount == null ? csvRows.length : buildMatrix._lastOutputDataCount;
+    return n;
+  }
+
+  function downloadTSV() {
+    const n = downloadBlob(buildTSV(), 'text/tab-separated-values;charset=utf-8', outputFileName('tsv'));
     setStatus('ok', `Downloaded ${n} row${n === 1 ? '' : 's'} as TSV.`);
+  }
+
+  function downloadCSV() {
+    const csv = Transforms.toCSV(buildMatrix());
+    const n = downloadBlob(csv, 'text/csv;charset=utf-8', outputFileName('csv'));
+    setStatus('ok', `Downloaded ${n} row${n === 1 ? '' : 's'} as CSV.`);
   }
 
   async function doCopy(triggerBtn) {
@@ -1326,6 +1338,7 @@ document.addEventListener('DOMContentLoaded', () => {
   btnCopy.addEventListener('click', () => doCopy(btnCopy));
   btnCopySticky.addEventListener('click', () => doCopy(btnCopySticky));
   btnDownloadTsv.addEventListener('click', downloadTSV);
+  btnDownloadCsv.addEventListener('click', downloadCSV);
   btnSelectFallback.addEventListener('click', () => {
     fallbackTsv.focus();
     fallbackTsv.select();

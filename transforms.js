@@ -322,12 +322,23 @@
     return out;
   }
 
+  // RFC-4180 CSV encoding (comma-separated, "" escaped quotes), mirrors buildTSV's
+  // tab-separated output. Used by the "Download CSV" button.
+  function csvField(value) {
+    const s = String(value == null ? '' : value);
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  function toCSV(matrix) {
+    return (matrix || []).map(row => row.map(csvField).join(',')).join('\r\n');
+  }
+
   const api = {
     cleanNumeric, normalizeDate, splitRows, splitTargets,
     parseCSV, detectDelimiter, normalizeString,
     headerMatchConfidence, autoMatchIndex,
     asNumber, compareValues, sortRows,
-    sumColumns, summarizeRows
+    sumColumns, summarizeRows, toCSV
   };
   root.Transforms = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

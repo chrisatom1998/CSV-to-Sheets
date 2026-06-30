@@ -345,3 +345,18 @@ test('summarizeRows: labelIndex -1 preserves numeric total columns', () => {
     ['30', '3']
   ]);
 });
+
+const { toCSV } = require('../transforms.js');
+
+test('toCSV: joins cells with commas and rows with CRLF', () => {
+  assert.strictEqual(toCSV([['a', 'b'], ['1', '2']]), 'a,b\r\n1,2');
+});
+
+test('toCSV: quotes fields containing commas, quotes, or newlines', () => {
+  assert.strictEqual(toCSV([['Acme, Inc.', 'He said "hi"', 'line1\nline2']]),
+    '"Acme, Inc.","He said ""hi""","line1\nline2"');
+});
+
+test('toCSV: leaves plain fields unquoted and handles blanks/null', () => {
+  assert.strictEqual(toCSV([['plain', '', null, undefined]]), 'plain,,,');
+});
