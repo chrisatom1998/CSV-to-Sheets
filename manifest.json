@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "CSV to Sheets Paster",
   "version": "1.1.0",
+  "minimum_chrome_version": "111",
   "description": "Upload a CSV, map its columns to headers you type, and copy a clean block ready to paste straight into Google Sheets.",
   "permissions": ["storage", "unlimitedStorage", "clipboardRead"],
   "icons": {

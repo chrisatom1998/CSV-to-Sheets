@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CSV to Sheets</title>
   <link rel="stylesheet" href="fonts/fonts.css">
   <link rel="stylesheet" href="popup.css">
 </head>
@@ -15,16 +17,16 @@
     </header>
 
     <div class="brand-ribbon" aria-hidden="true">
-      <span style="--c:var(--g-blue)"></span>
-      <span style="--c:var(--g-red)"></span>
-      <span style="--c:var(--g-yellow)"></span>
-      <span style="--c:var(--g-green)"></span>
+      <span></span>
+      <span></span>
+      <span></span>
+      <span></span>
     </div>
 
     <p class="lede">Map a CSV onto headers you choose, then paste straight into Sheets.</p>
 
     <!-- 1 · Upload (blue) -->
-    <section class="module collapsible" id="module-upload" style="--accent:var(--g-blue)">
+    <section class="module collapsible accent-blue" id="module-upload">
       <div class="module-head" id="head-upload" role="button" tabindex="0"
            aria-expanded="true" aria-controls="body-upload">
         <span class="module-num">1</span>
@@ -78,7 +80,7 @@
     </section>
 
     <!-- 2 · Headers (red) -->
-    <section class="module collapsible" id="module-headers" style="--accent:var(--g-red)">
+    <section class="module collapsible accent-red" id="module-headers">
       <div class="module-head" id="head-headers" role="button" tabindex="0"
            aria-expanded="true" aria-controls="body-headers">
         <span class="module-num">2</span>
@@ -137,7 +139,7 @@
     </section>
 
     <!-- 3 · Map (yellow) -->
-    <section class="module" style="--accent:var(--g-yellow)">
+    <section class="module accent-yellow">
       <div class="module-head">
         <span class="module-num">3</span>
         <h2>Map columns</h2>
@@ -149,7 +151,7 @@
     </section>
 
     <!-- 4 · Copy (green) -->
-    <section class="module" style="--accent:var(--g-green)">
+    <section class="module accent-green">
       <div class="module-head">
         <span class="module-num">4</span>
         <h2>Copy &amp; paste</h2>
@@ -235,14 +237,14 @@
       </div>
       <div id="mapping-warning" class="mapping-warning hidden" role="status" aria-live="polite"></div>
       <div class="output-actions">
-        <button id="btn-copy" class="btn-copy" disabled>
+        <button id="btn-copy" type="button" class="btn-copy" disabled>
           <svg viewBox="0 0 24 24" class="btn-icon" aria-hidden="true">
             <rect x="9" y="9" width="11" height="11" rx="2" />
             <path d="M5 15V5a2 2 0 012-2h10" />
           </svg>
           <span class="btn-text">Copy for Google Sheets</span>
         </button>
-        <button id="btn-download-tsv" class="btn-download-tsv" disabled
+        <button id="btn-download-tsv" type="button" class="btn-download-tsv" disabled
           title="Download the mapped output as a TSV file">
           <svg viewBox="0 0 24 24" class="btn-icon" aria-hidden="true">
             <path d="M12 3v12m0 0l-4-4m4 4l4-4" />
@@ -250,7 +252,7 @@
           </svg>
           <span>TSV</span>
         </button>
-        <button id="btn-download-csv" class="btn-download-csv" disabled
+        <button id="btn-download-csv" type="button" class="btn-download-csv" disabled
           title="Download the mapped output as a CSV file">
           <svg viewBox="0 0 24 24" class="btn-icon" aria-hidden="true">
             <path d="M12 3v12m0 0l-4-4m4 4l4-4" />
@@ -265,13 +267,14 @@
           <span>Manual copy fallback</span>
           <button id="btn-dismiss-fallback" type="button" class="mini-btn">Dismiss</button>
         </div>
-        <textarea id="fallback-tsv" readonly rows="5" spellcheck="false"></textarea>
+        <textarea id="fallback-tsv" readonly rows="5" spellcheck="false"
+          aria-label="Mapped output, tab-separated — select and copy manually"></textarea>
         <button id="btn-select-fallback" type="button" class="mini-btn">Select all</button>
       </div>
     </section>
 
     <!-- Preview -->
-    <section class="module preview-card hidden" id="preview-card" style="--accent:var(--g-grey-600)">
+    <section class="module preview-card hidden accent-grey" id="preview-card">
       <div class="module-head">
         <span class="module-num dot">•</span>
         <h2>Preview</h2>
@@ -295,7 +298,7 @@
     <!-- Sticky compact copy: pinned to the popup bottom, shown once mapping is valid
          so the user can copy without scrolling back to Step 4. -->
     <div class="sticky-cta hidden" id="sticky-cta">
-      <button id="btn-copy-sticky" class="btn-copy-sticky">
+      <button id="btn-copy-sticky" type="button" class="btn-copy-sticky">
         <svg viewBox="0 0 24 24" class="btn-icon" aria-hidden="true">
           <rect x="9" y="9" width="11" height="11" rx="2" />
           <path d="M5 15V5a2 2 0 012-2h10" />

@@ -30,7 +30,7 @@ above doesn't reach them.
 |------|------|
 | `manifest.json` | MV3 manifest. `permissions: ["storage", "clipboardRead", "unlimitedStorage"]`, popup-only, **no host permissions / no content scripts** (intentional — see above). |
 | `popup.html` | 4-step modular UI (Upload → Headers → Map → Copy) + preview. Steps 1 & 2 have **collapsible heads** (`.collapsible` / `.module-head[role=button]` + `.module-summary` + `.collapse-chevron`). A **sticky copy bar** (`#sticky-cta` / `#btn-copy-sticky`) is pinned to the popup bottom. Element IDs are the contract with `popup.js` — keep them stable. |
-| `popup.css` | Material-modular light theme. The gTech logo's four-color ring is the palette system: step 1 blue, 2 red, 3 yellow, 4 green (`--accent` per `.module`). |
+| `popup.css` | Material-modular light theme. The gTech logo's four-color ring is the palette system: step 1 blue, 2 red, 3 yellow, 4 green — each `.module` carries an `.accent-*` utility class that sets its `--accent` custom property (no inline styles). Requires Chrome ≥ 111 (`color-mix()`), declared in `.browserslistrc` and enforced by `minimum_chrome_version` in the manifest. |
 | `popup.js` | All DOM logic: CSV parsing, delimiter detection, skip-rows/header handling, quick-add header chips, column mapping, number cleaning, TSV build, clipboard copy, persistence. Pure transforms live in `transforms.js`. |
 | `transforms.js` | **Pure, DOM-free** data transforms shared by the popup, the parse worker, and the Node tests: `parseCSV(text, delim)` (RFC-4180-ish), `detectDelimiter(text)` (multi-row sampling sniffer), `decodeBytes(buffer)` (BOM/heuristic UTF-8 / UTF-16LE / UTF-16BE decoding of a file's raw bytes), `cleanNumeric(value, style)` (normalize currency/thousands; `style` `'us'` default or `'eu'` for `1.234,56`-style input; percents/text untouched), `detectNumberStyle(values)` (per-column `'us'`/`'eu'` sniffer; ambiguous → `'us'`), `splitRows(rawRows, {skip, firstRowHeader})`, `splitTargets(value)`, `toCSV(matrix)` (RFC-4180 CSV encoding, the inverse of `parseCSV`), `sortRows(rows, keys)` (stable multi-key), `rowPassesFilter(row, {index, op, value})` (one filter predicate; ops contains/equals/not-equals/blank/not-blank/gt/lt/gte/lte), `consolidateRows(rows, groupIndex, {agg})` (merges rows that share every non-numeric column into one, aggregating the numeric ones by `sum`/`avg`/`count`/`min`/`max`), plus header-matching helpers `autoMatchIndex(target, csvHeaders)` (returns a column **index**, -1 if none) and `headerMatchConfidence(target, header)` (`'exact'`/`'similar'`/`'none'`). Exposed as `globalThis.Transforms` and `module.exports`; loaded via `<script>` before `popup.js` and via `importScripts` in `parse-worker.js`. |
 | `parse-worker.js` | Web Worker that runs `Transforms.detectDelimiter` + `Transforms.parseCSV` off the main thread so large files don't freeze the popup. `popup.js` (`parseAsync`) only uses it for text ≥ 512 KB and falls back to an inline parse whenever workers are unavailable (e.g. `file://` static previews) or fail. |
@@ -190,8 +190,10 @@ above doesn't reach them.
   `.`-decimal form Sheets expects. Percents pass through untouched.
 - `chrome.*` calls (`persist`, `restore`) are wrapped in try/catch so a storage failure
   never breaks the UI — also lets the popup render in a plain browser for testing.
-- Respect the four-color step system and the `--accent` pattern when adding UI. Fonts:
-  Outfit for UI, Spline Sans Mono for any data/readout/code-like surface.
+- Respect the four-color step system and the `--accent` pattern when adding UI — set a
+  module's accent with the `.accent-*` classes (`accent-blue`/`red`/`yellow`/`green`/`grey`),
+  not inline styles. Fonts: Outfit for UI, Spline Sans Mono for any data/readout/code-like
+  surface.
 
 ## Testing / previewing
 

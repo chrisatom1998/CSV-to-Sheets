@@ -90,15 +90,14 @@ body {
   height: 5px;
 }
 .brand-ribbon span {
-  background: var(--c);
   border-radius: 999px;
   transform-origin: left;
   animation: ribbon .55s cubic-bezier(.2,.8,.2,1) both;
 }
-.brand-ribbon span:nth-child(1) { animation-delay: .05s; }
-.brand-ribbon span:nth-child(2) { animation-delay: .13s; }
-.brand-ribbon span:nth-child(3) { animation-delay: .21s; }
-.brand-ribbon span:nth-child(4) { animation-delay: .29s; }
+.brand-ribbon span:nth-child(1) { background: var(--g-blue); animation-delay: .05s; }
+.brand-ribbon span:nth-child(2) { background: var(--g-red); animation-delay: .13s; }
+.brand-ribbon span:nth-child(3) { background: var(--g-yellow); animation-delay: .21s; }
+.brand-ribbon span:nth-child(4) { background: var(--g-green); animation-delay: .29s; }
 
 .lede {
   color: var(--g-grey-600);
@@ -108,6 +107,14 @@ body {
 }
 
 /* ---------------- Modules ---------------- */
+/* Step accent colors: each module carries one of these classes and everything
+   inside styles itself off the inherited --accent custom property. */
+.accent-blue   { --accent: var(--g-blue); }
+.accent-red    { --accent: var(--g-red); }
+.accent-yellow { --accent: var(--g-yellow); }
+.accent-green  { --accent: var(--g-green); }
+.accent-grey   { --accent: var(--g-grey-600); }
+
 .module {
   position: relative;
   background: var(--surface);
@@ -243,6 +250,7 @@ body {
   gap: 10px;
   margin-top: 12px;
   cursor: pointer;
+  -webkit-user-select: none;
   user-select: none;
 }
 .switch-row input { position: absolute; opacity: 0; width: 0; height: 0; }
@@ -923,7 +931,7 @@ textarea:focus, select:focus {
 /* ---------------- Collapsible modules ---------------- */
 /* Upload & Headers can fold to a one-line summary so the popup stays short.
    The summary span doubles as a flex spacer, pinning the chevron to the right. */
-.collapsible .module-head { cursor: pointer; user-select: none; }
+.collapsible .module-head { cursor: pointer; -webkit-user-select: none; user-select: none; }
 .collapsible .module-head:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
@@ -962,6 +970,7 @@ textarea:focus, select:focus {
   align-items: center;
   gap: 8px;
   cursor: pointer;
+  -webkit-user-select: none;
   user-select: none;
   margin: 15px 0 6px;
 }

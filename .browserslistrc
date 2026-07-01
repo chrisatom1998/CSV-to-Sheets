@@ -1,0 +1,4 @@
+# This is a Chrome-extension-only (MV3) codebase; it never runs in Safari or
+# older Chrome. Chrome 111+ is required for color-mix() in popup.css, and is
+# enforced at install time by "minimum_chrome_version" in manifest.json.
+Chrome >= 111
