@@ -164,6 +164,16 @@ body {
   letter-spacing: -.2px;
   color: var(--g-grey-900);
 }
+.preview-rows-label {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--g-grey-600);
+}
+.preview-rows-select {
+  width: auto;
+  padding: 4px 7px;
+  font-size: 11.5px;
+}
 
 /* ---------------- Dropzone ---------------- */
 .dropzone {

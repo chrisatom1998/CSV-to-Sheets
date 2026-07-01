@@ -322,19 +322,67 @@
     return out;
   }
 
-  // Serialize a 2D array of strings to a standard RFC 4180 CSV string.
-  // Encapsulates cells containing commas, double quotes, or newlines in double quotes,
-  // and doubles any double quote characters inside the cell.
-  function buildCSV(matrix) {
-    return (matrix || []).map(row =>
-      (row || []).map(cell => {
-        const s = String(cell == null ? '' : cell);
-        if (/[",\r\n]/.test(s)) {
-          return '"' + s.replace(/"/g, '""') + '"';
-        }
-        return s;
-      }).join(',')
-    ).join('\n');
+  // A column counts as numeric (summable) only when every non-blank cell in it
+  // parses as a number — one stray text value (an ID, a note) keeps it a key
+  // column instead of silently dropping that column's text on consolidation.
+  function isNumericColumn(rows, index) {
+    let sawValue = false;
+    for (const row of rows) {
+      const cell = row[index];
+      if (cell == null || String(cell).trim() === '') continue;
+      sawValue = true;
+      if (asNumber(cell) === null) return false;
+    }
+    return sawValue;
+  }
+
+  // Merge rows that share the same value in every non-numeric ("key") column —
+  // groupIndex is always treated as a key column even if it happens to look
+  // numeric, since it's the field the caller explicitly grouped by — and sum
+  // their numeric columns into one row. Rows that differ in any key column
+  // (e.g. same date, different app) are left separate. Order follows first
+  // occurrence of each key. Returns a new array; the input is not mutated.
+  function consolidateRows(rows, groupIndex) {
+    const list = rows || [];
+    if (groupIndex == null || groupIndex < 0 || list.length === 0) return list.slice();
+
+    let width = 0;
+    list.forEach(r => { if ((r || []).length > width) width = r.length; });
+
+    const numericCols = [];
+    for (let i = 0; i < width; i++) numericCols[i] = i !== groupIndex && isNumericColumn(list, i);
+
+    const order = [];
+    const groups = new Map();
+    list.forEach(row => {
+      const key = JSON.stringify(row.map((cell, i) => numericCols[i] ? null : cell));
+      if (!groups.has(key)) { groups.set(key, []); order.push(key); }
+      groups.get(key).push(row);
+    });
+
+    return order.map(key => {
+      const group = groups.get(key);
+      if (group.length === 1) return group[0];
+      const merged = group[0].slice();
+      for (let i = 0; i < width; i++) {
+        if (!numericCols[i]) continue;
+        let sum = 0;
+        group.forEach(r => { const n = asNumber(r[i]); if (n !== null) sum += n; });
+        merged[i] = String(Math.round(sum * 1e6) / 1e6);
+      }
+      return merged;
+    });
+  }
+
+  // RFC-4180 CSV encoding (comma-separated, "" escaped quotes), mirrors buildTSV's
+  // tab-separated output. Used by the "Download CSV" button.
+  function csvField(value) {
+    const s = String(value == null ? '' : value);
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  function toCSV(matrix) {
+    return (matrix || []).map(row => row.map(csvField).join(',')).join('\r\n');
   }
 
   const api = {
@@ -342,7 +390,7 @@
     parseCSV, detectDelimiter, normalizeString,
     headerMatchConfidence, autoMatchIndex,
     asNumber, compareValues, sortRows,
-    sumColumns, summarizeRows, buildCSV
+    sumColumns, summarizeRows, consolidateRows, toCSV
   };
   root.Transforms = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
