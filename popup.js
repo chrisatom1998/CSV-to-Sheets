@@ -1328,11 +1328,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fallbackTsv.select();
   }
 
-<<<<<<< HEAD
   function outputFileName(ext) {
-=======
-  function outputFileName(ext = 'tsv') {
->>>>>>> origin/main
     const base = (loadedName || 'csv-to-sheets')
       .replace(/\.[^.]+$/, '')
       .replace(/[^a-z0-9._-]+/gi, '-')
@@ -1345,11 +1341,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-<<<<<<< HEAD
     a.download = fileName;
-=======
-    a.download = outputFileName('tsv');
->>>>>>> origin/main
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -1364,23 +1356,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function downloadCSV() {
-<<<<<<< HEAD
     const csv = Transforms.toCSV(buildMatrix());
     const n = downloadBlob(csv, 'text/csv;charset=utf-8', outputFileName('csv'));
-=======
-    const matrix = buildMatrix();
-    const csv = Transforms.buildCSV(matrix);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = outputFileName('csv');
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-    const n = buildMatrix._lastOutputDataCount == null ? csvRows.length : buildMatrix._lastOutputDataCount;
->>>>>>> origin/main
     setStatus('ok', `Downloaded ${n} row${n === 1 ? '' : 's'} as CSV.`);
   }
 
@@ -1745,11 +1722,7 @@ document.addEventListener('DOMContentLoaded', () => {
         [
           'targetHeaders', 'columnMapping', 'activeMappingPreset',
           'mappingPresets', 'requiredHeaders', 'firstRowHeader', 'includeHeader',
-<<<<<<< HEAD
           'headerOptions', 'skipRows', 'cleanNumbers', 'normalizeDates', 'totals', 'consolidate', 'rememberFile',
-=======
-          'headerOptions', 'skipRows', 'cleanNumbers', 'normalizeDates', 'rememberFile',
->>>>>>> origin/main
           'delimiterMode', 'sortBy', 'sortByTarget', 'sortDir', 'groupBy', 'groupByTarget',
           'filterBy', 'filterByTarget', 'filterOp', 'filterValue', 'previewRows',
           'csvText', 'csvFileName', 'csvDelim'

@@ -322,7 +322,6 @@
     return out;
   }
 
-<<<<<<< HEAD
   // A column counts as numeric (summable) only when every non-blank cell in it
   // parses as a number — one stray text value (an ID, a note) keeps it a key
   // column instead of silently dropping that column's text on consolidation.
@@ -384,21 +383,6 @@
 
   function toCSV(matrix) {
     return (matrix || []).map(row => row.map(csvField).join(',')).join('\r\n');
-=======
-  // Serialize a 2D array of strings to a standard RFC 4180 CSV string.
-  // Encapsulates cells containing commas, double quotes, or newlines in double quotes,
-  // and doubles any double quote characters inside the cell.
-  function buildCSV(matrix) {
-    return (matrix || []).map(row =>
-      (row || []).map(cell => {
-        const s = String(cell == null ? '' : cell);
-        if (/[",\r\n]/.test(s)) {
-          return '"' + s.replace(/"/g, '""') + '"';
-        }
-        return s;
-      }).join(',')
-    ).join('\n');
->>>>>>> origin/main
   }
 
   const api = {
@@ -406,11 +390,7 @@
     parseCSV, detectDelimiter, normalizeString,
     headerMatchConfidence, autoMatchIndex,
     asNumber, compareValues, sortRows,
-<<<<<<< HEAD
     sumColumns, summarizeRows, consolidateRows, toCSV
-=======
-    sumColumns, summarizeRows, buildCSV
->>>>>>> origin/main
   };
   root.Transforms = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
