@@ -292,58 +292,38 @@ test('sortRows: no keys returns a copy in original order', () => {
   assert.notStrictEqual(out, rows); // new array, input not mutated
 });
 
-const { sumColumns, summarizeRows } = require('../transforms.js');
+const { rowPassesFilter } = require('../transforms.js');
 
-test('sumColumns: totals numeric columns, blanks non-numeric', () => {
-  const rows = [['Banner', '$1,000', '5'], ['Video', '2,000', '3']];
-  assert.deepStrictEqual(sumColumns(rows), ['', '3000', '8']);
+test('rowPassesFilter: contains is the default, case-insensitive', () => {
+  assert.strictEqual(rowPassesFilter(['Banner Ad', '10'], { index: 0, op: 'contains', value: 'banner' }), true);
+  assert.strictEqual(rowPassesFilter(['Video', '10'], { index: 0, op: 'contains', value: 'banner' }), false);
 });
 
-test('sumColumns: rounds float noise off', () => {
-  assert.deepStrictEqual(sumColumns([['', '0.1'], ['', '0.2']]), ['', '0.3']);
+test('rowPassesFilter: equals / not-equals compare trimmed, case-insensitive', () => {
+  assert.strictEqual(rowPassesFilter([' Video '], { index: 0, op: 'equals', value: 'video' }), true);
+  assert.strictEqual(rowPassesFilter(['Video'], { index: 0, op: 'not-equals', value: 'video' }), false);
 });
 
-test('summarizeRows: appends a grand-total row (no grouping)', () => {
-  const rows = [['Jan', '10'], ['Feb', '20']];
-  assert.deepStrictEqual(summarizeRows(rows, {}), [
-    ['Jan', '10'],
-    ['Feb', '20'],
-    ['Total', '30']
-  ]);
+test('rowPassesFilter: blank / not-blank ignore the value', () => {
+  assert.strictEqual(rowPassesFilter(['', 'x'], { index: 0, op: 'blank', value: 'ignored' }), true);
+  assert.strictEqual(rowPassesFilter(['y', 'x'], { index: 0, op: 'not-blank', value: '' }), true);
+  assert.strictEqual(rowPassesFilter(['  '], { index: 0, op: 'blank', value: '' }), true);
 });
 
-test('summarizeRows: subtotal per group plus a grand total', () => {
-  const rows = [['Banner', '10'], ['Banner', '5'], ['Video', '20']];
-  assert.deepStrictEqual(summarizeRows(rows, { groupIndex: 0, labelIndex: 0 }), [
-    ['Banner', '10'],
-    ['Banner', '5'],
-    ['Subtotal: Banner', '15'],
-    ['Video', '20'],
-    ['Subtotal: Video', '20'],
-    ['Total', '35']
-  ]);
+test('rowPassesFilter: gt/lt/gte/lte compare numerically when both sides parse', () => {
+  assert.strictEqual(rowPassesFilter(['$1,000'], { index: 0, op: 'gt', value: '999' }), true);
+  assert.strictEqual(rowPassesFilter(['9'], { index: 0, op: 'gt', value: '10' }), false); // not lexical
+  assert.strictEqual(rowPassesFilter(['10'], { index: 0, op: 'gte', value: '10' }), true);
+  assert.strictEqual(rowPassesFilter(['10'], { index: 0, op: 'lte', value: '10' }), true);
 });
 
-test('summarizeRows: single group omits the redundant grand total', () => {
-  const rows = [['Banner', '10'], ['Banner', '5']];
-  assert.deepStrictEqual(summarizeRows(rows, { groupIndex: 0, labelIndex: 0 }), [
-    ['Banner', '10'],
-    ['Banner', '5'],
-    ['Subtotal: Banner', '15']
-  ]);
+test('rowPassesFilter: gt/lt fall back to text comparison for non-numbers', () => {
+  assert.strictEqual(rowPassesFilter(['beta'], { index: 0, op: 'gt', value: 'alpha' }), true);
+  assert.strictEqual(rowPassesFilter(['alpha'], { index: 0, op: 'lt', value: 'beta' }), true);
 });
 
-test('summarizeRows: empty input yields no rows', () => {
-  assert.deepStrictEqual(summarizeRows([], {}), []);
-});
-
-test('summarizeRows: labelIndex -1 preserves numeric total columns', () => {
-  const rows = [['10', '1'], ['20', '2']];
-  assert.deepStrictEqual(summarizeRows(rows, { labelIndex: -1 }), [
-    ['10', '1'],
-    ['20', '2'],
-    ['30', '3']
-  ]);
+test('rowPassesFilter: null filter passes everything', () => {
+  assert.strictEqual(rowPassesFilter(['x'], null), true);
 });
 
 const { toCSV } = require('../transforms.js');
@@ -408,3 +388,100 @@ test('consolidateRows: preserves first-occurrence order of groups', () => {
   ]);
 });
 
+
+test('consolidateRows: agg avg / min / max aggregate the numeric columns', () => {
+  const rows = [
+    ['Banner', '10', '1'],
+    ['Banner', '20', '3'],
+    ['Video', '5', '7']
+  ];
+  assert.deepStrictEqual(consolidateRows(rows, 0, { agg: 'avg' }), [
+    ['Banner', '15', '2'],
+    ['Video', '5', '7']
+  ]);
+  assert.deepStrictEqual(consolidateRows(rows, 0, { agg: 'min' }), [
+    ['Banner', '10', '1'],
+    ['Video', '5', '7']
+  ]);
+  assert.deepStrictEqual(consolidateRows(rows, 0, { agg: 'max' }), [
+    ['Banner', '20', '3'],
+    ['Video', '5', '7']
+  ]);
+});
+
+test('consolidateRows: agg count reports how many numeric values merged', () => {
+  const rows = [
+    ['Banner', '10'],
+    ['Banner', '20'],
+    ['Video', '5']
+  ];
+  assert.deepStrictEqual(consolidateRows(rows, 0, { agg: 'count' }), [
+    ['Banner', '2'],
+    ['Video', '1']
+  ]);
+});
+
+const { detectNumberStyle } = require('../transforms.js');
+
+test('detectNumberStyle: both separators decide by order', () => {
+  assert.strictEqual(detectNumberStyle(['1.234,56', '2.000,00']), 'eu');
+  assert.strictEqual(detectNumberStyle(['1,234.56', '2,000.00']), 'us');
+});
+
+test('detectNumberStyle: decimal comma and repeated grouping vote EU', () => {
+  assert.strictEqual(detectNumberStyle(['12,5', '99,9']), 'eu');
+  assert.strictEqual(detectNumberStyle(['1.234.567']), 'eu');
+});
+
+test('detectNumberStyle: ambiguous or empty input defaults to US', () => {
+  assert.strictEqual(detectNumberStyle(['1,234', '1.234']), 'us'); // both abstain
+  assert.strictEqual(detectNumberStyle([]), 'us');
+  assert.strictEqual(detectNumberStyle(['Banner', 'Video']), 'us');
+});
+
+test('detectNumberStyle: currency and sign are ignored when voting', () => {
+  assert.strictEqual(detectNumberStyle(['€ 1.234,56', '-2,5']), 'eu');
+  assert.strictEqual(detectNumberStyle(['$1,234.56']), 'us');
+});
+
+test('cleanNumeric: eu style converts grouped and decimal-comma values', () => {
+  assert.strictEqual(cleanNumeric('1.234,56', 'eu'), '1234.56');
+  assert.strictEqual(cleanNumeric('€ 1.234,56', 'eu'), '1234.56');
+  assert.strictEqual(cleanNumeric('12,5', 'eu'), '12.5');
+  assert.strictEqual(cleanNumeric('1.234', 'eu'), '1234'); // bare EU grouping
+  assert.strictEqual(cleanNumeric('-1.000,25', 'eu'), '-1000.25');
+});
+
+test('cleanNumeric: eu style leaves non-numbers and percents untouched', () => {
+  assert.strictEqual(cleanNumeric('Banner', 'eu'), 'Banner');
+  assert.strictEqual(cleanNumeric('45,2%', 'eu'), '45,2%');
+});
+
+test('cleanNumeric: default style is unchanged US behavior', () => {
+  assert.strictEqual(cleanNumeric('$1,234.56'), '1234.56');
+  assert.strictEqual(cleanNumeric('1.234,56'), '1.234,56'); // EU input passes through untouched
+});
+
+const { decodeBytes } = require('../transforms.js');
+
+test('decodeBytes: plain UTF-8 and UTF-8 BOM', () => {
+  const enc = new TextEncoder();
+  assert.strictEqual(decodeBytes(enc.encode('a,b\n1,2')), 'a,b\n1,2');
+  const bom = new Uint8Array([0xEF, 0xBB, 0xBF, ...enc.encode('a,b')]);
+  assert.strictEqual(decodeBytes(bom), 'a,b');
+});
+
+test('decodeBytes: UTF-16LE with BOM', () => {
+  const text = 'a,b\n1,2';
+  const bytes = new Uint8Array(2 + text.length * 2);
+  bytes[0] = 0xFF; bytes[1] = 0xFE;
+  for (let i = 0; i < text.length; i++) bytes[2 + i * 2] = text.charCodeAt(i);
+  assert.strictEqual(decodeBytes(bytes), text);
+});
+
+test('decodeBytes: BOM-less UTF-16LE via the NUL heuristic', () => {
+  const text = 'Date,App,Earnings\n2024-01-01,Foo,12.34\n';
+  const bytes = new Uint8Array(text.length * 2);
+  for (let i = 0; i < text.length; i++) bytes[i * 2] = text.charCodeAt(i);
+  assert.strictEqual(decodeBytes(bytes), text);
+});

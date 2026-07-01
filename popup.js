@@ -19,11 +19,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const inputImportPresets = document.getElementById('input-import-presets');
   const selectSortBy = document.getElementById('select-sort-by');
   const selectSortDir = document.getElementById('select-sort-dir');
+  const selectSortBy2 = document.getElementById('select-sort-by-2');
+  const selectSortDir2 = document.getElementById('select-sort-dir-2');
   const selectGroupBy = document.getElementById('select-group-by');
   const chkConsolidate = document.getElementById('chk-consolidate');
-  const selectFilterBy = document.getElementById('select-filter-by');
-  const selectFilterOp = document.getElementById('select-filter-op');
-  const inputFilterValue = document.getElementById('input-filter-value');
+  const selectConsolidateAgg = document.getElementById('select-consolidate-agg');
+  const filterList = document.getElementById('filter-list');
+  const btnAddFilter = document.getElementById('btn-add-filter');
   const selectPreviewRows = document.getElementById('select-preview-rows');
   const presetChips = document.getElementById('preset-chips');
   const mappingList = document.getElementById('mapping-list');
@@ -111,6 +113,19 @@ document.addEventListener('DOMContentLoaded', () => {
   let loadedText = '';   // raw text of the loaded file (for opt-in persistence)
   let loadedName = '';   // name of the loaded file
 
+  // Active row filters (ANDed). Each entry keeps the chosen output column both
+  // as an index ('none' or a stringified number, matching the select values)
+  // and by target header name, so the filter survives header reordering the
+  // same way the sort/group selects do.
+  const FILTER_OPS = ['contains', 'equals', 'not-equals', 'blank', 'not-blank', 'gt', 'lt', 'gte', 'lte'];
+  const FILTER_OP_LABELS = {
+    contains: 'Contains', equals: 'Equals', 'not-equals': 'Not equals',
+    blank: 'Blank', 'not-blank': 'Not blank',
+    gt: '> Greater than', lt: '< Less than', gte: '≥ Greater or equal', lte: '≤ Less or equal'
+  };
+  const AGG_OPS = ['sum', 'avg', 'count', 'min', 'max'];
+  let filters = [];      // [{ target, index, op, value }]
+
   // ----------------- Drag-reorder placeholder -----------------
   // During a header-bubble drag, a grey dashed ghost sits at the insertion
   // point so the user can see where the bubble will land on drop.
@@ -184,30 +199,116 @@ document.addEventListener('DOMContentLoaded', () => {
     return d === '\t' ? 'tab' : d === ';' ? 'semicolon' : d === '|' ? 'pipe' : 'comma';
   }
 
-  function selectedDelimiter(text) {
-    const mode = selectDelimiter.value;
-    if (mode === 'tab') return '\t';
-    if (mode === ',' || mode === ';' || mode === '|') return mode;
-    return Transforms.detectDelimiter(text);
-  }
-
   function isSupportedDelimiter(delim) {
     return delim === ',' || delim === '\t' || delim === ';' || delim === '|';
   }
 
-  function reparseLoadedFile() {
-    if (!loadedText) return;
+  // ----------------- Async parsing (worker) -----------------
+  // Large files parse in a Web Worker (parse-worker.js) so the popup never
+  // freezes; small files skip the worker round-trip and parse inline. Any
+  // worker failure (including file:// static previews, where Workers are
+  // blocked) falls back to the same inline parse.
+  const PARSE_WORKER_MIN_CHARS = 512 * 1024;
+  let _parseWorker = null;   // Worker | false (unavailable) | null (not tried)
+  let _parseSeq = 0;
+  const _parsePending = new Map(); // id -> {resolve, reject}
+
+  function getParseWorker() {
+    if (_parseWorker !== null) return _parseWorker;
     try {
-      detectedDelim = selectedDelimiter(loadedText);
-      rawRows = Transforms.parseCSV(loadedText, detectedDelim);
+      _parseWorker = new Worker('parse-worker.js');
+      _parseWorker.onmessage = e => {
+        const { id, ok, rows, delim, error } = e.data || {};
+        const cb = _parsePending.get(id);
+        if (!cb) return;
+        _parsePending.delete(id);
+        if (ok) cb.resolve({ rows, delim });
+        else cb.reject(new Error(error || 'worker parse failed'));
+      };
+      _parseWorker.onerror = () => {
+        // The worker itself broke: fail pending requests (each falls back to an
+        // inline parse) and don't try the worker again this session.
+        _parsePending.forEach(cb => cb.reject(new Error('parse worker error')));
+        _parsePending.clear();
+        try { _parseWorker.terminate(); } catch (e) { /* already dead */ }
+        _parseWorker = false;
+      };
+    } catch (e) {
+      _parseWorker = false;
+    }
+    return _parseWorker;
+  }
+
+  // Parse text into rows, detecting the delimiter unless one is forced.
+  // Resolves { rows, delim }; never rejects (worker errors fall back inline).
+  function parseAsync(text, explicitDelim) {
+    const inline = () => {
+      const delim = explicitDelim || Transforms.detectDelimiter(text);
+      return { rows: Transforms.parseCSV(text, delim), delim };
+    };
+    if (text.length < PARSE_WORKER_MIN_CHARS) return Promise.resolve().then(inline);
+    const worker = getParseWorker();
+    if (!worker) return Promise.resolve().then(inline);
+    const id = ++_parseSeq;
+    return new Promise((resolve, reject) => {
+      _parsePending.set(id, { resolve, reject });
+      worker.postMessage({ id, text, delim: explicitDelim || null });
+    }).catch(inline);
+  }
+
+  // Map the delimiter <select> mode to a forced delimiter (null = auto-detect).
+  function explicitDelimiter() {
+    const mode = selectDelimiter.value;
+    if (mode === 'tab') return '\t';
+    if (mode === ',' || mode === ';' || mode === '|') return mode;
+    return null;
+  }
+
+  // Parse `text` and swing the whole UI over to it. All three entry points
+  // (fresh upload, delimiter re-parse, remembered-file restore) funnel through
+  // here. A newer call supersedes an older in-flight one (the token check), so
+  // rapid delimiter switches can't apply out of order.
+  let _loadSeq = 0;
+  function loadFromText(text, name, opts) {
+    opts = opts || {};
+    const token = ++_loadSeq;
+    const textBytes = (typeof Blob !== 'undefined') ? new Blob([text]).size : text.length;
+    if (textBytes >= LARGE_FILE_BYTES) setStatus('', 'Parsing…');
+    const delim = 'explicitDelim' in opts ? opts.explicitDelim : explicitDelimiter();
+    return parseAsync(text, delim).then(({ rows, delim: used }) => {
+      if (token !== _loadSeq) return; // superseded by a newer load
+      detectedDelim = used;
+      rawRows = rows;
+      loadedText = text;
+      loadedName = name;
       applyHeaderMode();
       renderMapping();
       renderPreview();
-      maybePersistCurrentFile();
-    } catch (e) {
+      if (opts.collapseUpload !== false) setCollapsed(moduleUpload, headUpload, true);
+      if (textBytes >= LARGE_FILE_BYTES) {
+        setStatus('', `Large file (${formatBytes(textBytes)}). Preview stays capped; copy may take a moment.`);
+      } else {
+        setStatus('', '');
+      }
+      if (opts.persist !== false) {
+        if (chkRememberFile.checked && textBytes <= PERSIST_FILE_MAX_BYTES) {
+          persistFile(text, name, used);
+        } else if (chkRememberFile.checked) {
+          clearPersistedFile();
+          setStatus('', `File too large to remember (${formatBytes(textBytes)}). It loads normally but won’t persist across sessions.`);
+        } else {
+          clearPersistedFile(); // not remembering — drop any stale copy
+        }
+      }
+    }).catch(e => {
       console.error(e);
-      setStatus('err', 'Could not parse with that delimiter.');
-    }
+      if (token === _loadSeq) setStatus('err', 'Could not parse that file.');
+    });
+  }
+
+  function reparseLoadedFile() {
+    if (!loadedText) return;
+    loadFromText(loadedText, loadedName, { collapseUpload: false });
   }
 
   function formatBytes(bytes) {
@@ -268,12 +369,26 @@ document.addEventListener('DOMContentLoaded', () => {
     if (subsectionAdvanced.classList.contains('collapsed')) {
       const parts = [];
       if (selectGroupBy.value !== 'none') parts.push(chkConsolidate.checked ? 'Grouped + combined' : 'Grouped');
-      if (selectSortBy.value !== 'none') parts.push('Sorted');
-      if (selectFilterBy.value !== 'none') parts.push('Filtered');
+      if (selectSortBy.value !== 'none' || selectSortBy2.value !== 'none') parts.push('Sorted');
+      const nf = getFilters(getTargets()).length;
+      if (nf) parts.push(nf === 1 ? 'Filtered' : `Filtered ×${nf}`);
       advancedSummary.textContent = parts.length ? parts.join(' · ') : 'No changes';
     } else {
       advancedSummary.textContent = '';
     }
+  }
+
+  // True when any sort/group/combine/filter setting is in effect; used to pop
+  // the Advanced options fold open when restored or preset-applied settings
+  // would otherwise be invisibly active.
+  function advancedActive() {
+    return selectSortBy.value !== 'none' || selectSortBy2.value !== 'none' ||
+      selectGroupBy.value !== 'none' ||
+      (chkConsolidate.checked && !chkConsolidate.disabled) ||
+      getFilters(getTargets()).length > 0;
+  }
+  function maybeExpandAdvanced() {
+    if (advancedActive()) setCollapsed(subsectionAdvanced, headAdvanced, false);
   }
 
   // ----------------- Step 2: pills vs. text -----------------
@@ -325,7 +440,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const valid = csvRows.length > 0 && getTargets().length > 0;
     stickyCta.classList.toggle('hidden', !valid);
     if (valid) {
-      const n = buildMatrix._lastOutputDataCount == null ? csvRows.length : buildMatrix._lastOutputDataCount;
+      const n = buildMatrix._lastDataCount == null ? csvRows.length : buildMatrix._lastDataCount;
       stickyCount.textContent = n ? `${n} row${n === 1 ? '' : 's'}` : '';
     } else {
       stickyCount.textContent = '';
@@ -339,43 +454,24 @@ document.addEventListener('DOMContentLoaded', () => {
     fileLabel.textContent = file.name;
     fileDrop.classList.add('has-file');
     btnClearFile.classList.remove('hidden');
-    if (file.size >= LARGE_FILE_BYTES) {
-      setStatus('', `Large file (${formatBytes(file.size)}). Preview stays capped at ${PREVIEW_ROWS} rows; copy may take a moment.`);
-    } else {
-      setStatus('', '');
-    }
 
+    // Read raw bytes (not readAsText, which assumes UTF-8) so decodeBytes can
+    // sniff BOMs / BOM-less UTF-16 — Google product exports are sometimes
+    // UTF-16, which would otherwise decode to NUL-riddled garbage.
     const reader = new FileReader();
     reader.onload = () => {
+      let text;
       try {
-        const text = String(reader.result);
-        detectedDelim = selectedDelimiter(text);
-        rawRows = Transforms.parseCSV(text, detectedDelim);
-        loadedText = text;
-        loadedName = file.name;
-        applyHeaderMode();
-        renderMapping();
-        renderPreview();
-        setCollapsed(moduleUpload, headUpload, true); // fold Upload now that a file
-        // Remember the file only when the user opted in and the decoded text
-        // fits the quota. Uses Blob byte size (not file.size) because UTF-16
-        // files shrink after readAsText decoding.
-        const textBytes = (typeof Blob !== 'undefined') ? new Blob([text]).size : text.length;
-        if (chkRememberFile.checked && textBytes <= PERSIST_FILE_MAX_BYTES) {
-          persistFile(text, file.name, detectedDelim);
-        } else if (chkRememberFile.checked) {
-          clearPersistedFile();
-          setStatus('', `File too large to remember (${formatBytes(textBytes)}). It loads normally but won’t persist across sessions.`);
-        } else {
-          clearPersistedFile(); // not remembering — drop any stale copy
-        }
+        text = Transforms.decodeBytes(reader.result);
       } catch (e) {
         console.error(e);
-        setStatus('err', 'Could not parse that file.');
+        setStatus('err', 'Could not decode that file.');
+        return;
       }
+      loadFromText(text, file.name);
     };
     reader.onerror = () => setStatus('err', 'Failed to read the file.');
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   }
 
   fileInput.addEventListener('change', () => {
@@ -574,12 +670,52 @@ document.addEventListener('DOMContentLoaded', () => {
     return mappingPresets.find(p => presetNameKey(p.name) === key);
   }
 
+  // The sort/group/combine/filter pipeline as a name-keyed snapshot (column
+  // indices aren't stable across files, so everything is stored by target
+  // header name and re-resolved on apply).
+  function getPipelineState() {
+    return {
+      sortByTarget: selectedTargetName(selectSortBy),
+      sortDir: selectSortDir.value,
+      sortBy2Target: selectedTargetName(selectSortBy2),
+      sortDir2: selectSortDir2.value,
+      groupByTarget: selectedTargetName(selectGroupBy),
+      consolidate: chkConsolidate.checked,
+      consolidateAgg: selectConsolidateAgg.value,
+      filters: filters
+        .filter(f => f.target || String(f.value).trim())
+        .map(f => ({ target: f.target, op: f.op, value: f.value }))
+    };
+  }
+
+  // Apply a saved pipeline snapshot. Must run after renderMapping() has
+  // rebuilt the sort/group option lists for the preset's targets.
+  function applyPipelineState(p) {
+    trySelectTarget(selectSortBy, p.sortByTarget, 'none');
+    selectSortDir.value = p.sortDir === 'desc' ? 'desc' : 'asc';
+    trySelectTarget(selectSortBy2, p.sortBy2Target, 'none');
+    selectSortDir2.value = p.sortDir2 === 'desc' ? 'desc' : 'asc';
+    trySelectTarget(selectGroupBy, p.groupByTarget, 'none');
+    chkConsolidate.checked = !!p.consolidate && selectGroupBy.value !== 'none';
+    if (AGG_OPS.includes(p.consolidateAgg)) selectConsolidateAgg.value = p.consolidateAgg;
+    updateConsolidateEnabled();
+    filters = Array.isArray(p.filters) ? p.filters.map(f => ({
+      target: typeof f.target === 'string' ? f.target : '',
+      index: 'none', // re-resolved from the target name by renderFilterControls
+      op: FILTER_OPS.includes(f.op) ? f.op : 'contains',
+      value: typeof f.value === 'string' ? f.value : ''
+    })) : [];
+    renderFilterControls();
+    maybeExpandAdvanced();
+  }
+
   function snapshotPreset(name) {
     return {
       name: String(name || '').trim(),
       targetHeaders: inputTargetHeaders.value.trim(),
       columnMapping: Object.assign({}, getMapping()),
-      requiredHeaders: cleanRequiredHeaders()
+      requiredHeaders: cleanRequiredHeaders(),
+      pipeline: getPipelineState()
     };
   }
 
@@ -632,6 +768,9 @@ document.addEventListener('DOMContentLoaded', () => {
     renderMapping._saved = Object.assign({}, preset.columnMapping || {});
     renderTargetOrder();
     renderMapping();
+    // Older presets (saved before pipelines) leave the current sort/group/filter
+    // settings alone; newer ones restore the full recipe.
+    if (preset.pipeline) applyPipelineState(preset.pipeline);
     renderPreview();
     persist();
     updateChipActive();
@@ -743,12 +882,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function normalizePreset(preset) {
     if (!preset || typeof preset.name !== 'string' || !preset.name.trim()) return null;
-    return {
+    const out = {
       name: preset.name.trim(),
       targetHeaders: typeof preset.targetHeaders === 'string' ? preset.targetHeaders : '',
       columnMapping: preset.columnMapping && typeof preset.columnMapping === 'object' ? preset.columnMapping : {},
       requiredHeaders: Array.isArray(preset.requiredHeaders) ? preset.requiredHeaders.filter(h => typeof h === 'string') : []
     };
+    // Optional pipeline (sort/group/combine/filter recipe); applyPipelineState
+    // defends field-by-field, so passing it through mostly as-is is safe.
+    if (preset.pipeline && typeof preset.pipeline === 'object') out.pipeline = preset.pipeline;
+    return out;
   }
 
   function exportMappingPresets() {
@@ -1067,14 +1210,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // Read the sort/group selects into a Transforms.sortRows key list, referencing
   // *output* column positions (the user sorts by a target header). Returns null
   // when nothing is set. Grouping is the primary key (clusters like rows, always
-  // ascending for a readable order); the sort key orders rows within each group.
-  // When both point at the same column, the chosen sort direction wins.
+  // ascending for a readable order); the sort key orders rows within each group,
+  // and the secondary "Then by" key breaks its ties. When group and sort point
+  // at the same column, the chosen sort direction wins; a secondary key that
+  // duplicates an earlier key is ignored.
   function getOrdering(targets) {
     const n = targets.length;
     const inRange = v => /^\d+$/.test(v) && Number(v) < n;
     const groupIdx = inRange(selectGroupBy.value) ? Number(selectGroupBy.value) : -1;
     const sortIdx = inRange(selectSortBy.value) ? Number(selectSortBy.value) : -1;
     const sortDir = selectSortDir.value === 'desc' ? 'desc' : 'asc';
+    const sortIdx2 = inRange(selectSortBy2.value) ? Number(selectSortBy2.value) : -1;
+    const sortDir2 = selectSortDir2.value === 'desc' ? 'desc' : 'asc';
 
     const keys = [];
     if (groupIdx !== -1 && groupIdx === sortIdx) {
@@ -1082,6 +1229,9 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       if (groupIdx !== -1) keys.push({ index: groupIdx, dir: 'asc' });
       if (sortIdx !== -1) keys.push({ index: sortIdx, dir: sortDir });
+    }
+    if (sortIdx2 !== -1 && !keys.some(k => k.index === sortIdx2)) {
+      keys.push({ index: sortIdx2, dir: sortDir2 });
     }
     return keys.length ? keys : null;
   }
@@ -1134,20 +1284,134 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderOrderControls(targets) {
     const t = targets || getTargets();
     fillOrderSelect(selectSortBy, t, '— original order —');
+    fillOrderSelect(selectSortBy2, t, '— none —');
     fillOrderSelect(selectGroupBy, t, '— no grouping —');
     updateConsolidateEnabled();
   }
 
-  // "Combine matching rows" only makes sense once a group column is chosen.
+  // "Combine matching rows" only makes sense once a group column is chosen, and
+  // its aggregation picker only once combining is actually on.
   function updateConsolidateEnabled() {
     chkConsolidate.disabled = selectGroupBy.value === 'none';
+    selectConsolidateAgg.disabled = chkConsolidate.disabled || !chkConsolidate.checked;
   }
 
+  // ----------------- Filters (multiple, ANDed) -----------------
+
+  function blankFilter() {
+    return { target: '', index: 'none', op: 'contains', value: '' };
+  }
+
+  // A value input is meaningless with no column picked or a blank/not-blank op.
+  function filterNeedsValue(f) {
+    return f.op !== 'blank' && f.op !== 'not-blank';
+  }
+
+  // Rebuild the filter rows from the `filters` array, re-resolving each entry's
+  // column against the current targets (by header name first, like the sort and
+  // group selects, so filters survive header reorders). Always shows at least
+  // one row so the empty state still reads as "Filter: No filter".
   function renderFilterControls(targets) {
     const t = targets || getTargets();
-    fillOrderSelect(selectFilterBy, t, 'No filter');
-    const op = selectFilterOp.value;
-    inputFilterValue.disabled = selectFilterBy.value === 'none' || op === 'blank' || op === 'not-blank';
+    if (filters.length === 0) filters.push(blankFilter());
+    filterList.innerHTML = '';
+    filters.forEach((f, i) => filterList.appendChild(buildFilterRow(f, i, t)));
+  }
+
+  function buildFilterRow(f, i, targets) {
+    const item = document.createElement('div');
+    item.className = 'filter-item';
+    const row = document.createElement('div');
+    row.className = 'filter-row' + (filters.length === 1 ? ' no-remove' : '');
+
+    const label = document.createElement('label');
+    label.className = 'order-label';
+    label.textContent = i === 0 ? 'Filter' : 'and';
+
+    const colSel = document.createElement('select');
+    colSel.className = 'order-select';
+    colSel.setAttribute('aria-label', `Filter ${i + 1} column`);
+    const optNone = document.createElement('option');
+    optNone.value = 'none';
+    optNone.textContent = 'No filter';
+    colSel.appendChild(optNone);
+    targets.forEach((tName, idx) => {
+      const dup = targets.filter(x => x.toLowerCase() === tName.toLowerCase()).length > 1;
+      const opt = document.createElement('option');
+      opt.value = String(idx);
+      opt.textContent = dup ? `${tName} (#${idx + 1})` : tName;
+      opt.dataset.targetName = tName;
+      colSel.appendChild(opt);
+    });
+    // Resolve the stored column: by target name first, then the raw index.
+    const byName = optionValueForTargetName(colSel, f.target);
+    if (byName != null) colSel.value = byName;
+    else if (/^\d+$/.test(String(f.index)) && Number(f.index) < targets.length) colSel.value = String(f.index);
+    else colSel.value = 'none';
+    f.index = colSel.value;
+    f.target = selectedTargetName(colSel);
+    label.setAttribute('for', colSel.id = `select-filter-by-${i}`);
+
+    const opSel = document.createElement('select');
+    opSel.className = 'order-dir';
+    opSel.setAttribute('aria-label', `Filter ${i + 1} operation`);
+    FILTER_OPS.forEach(op => {
+      const opt = document.createElement('option');
+      opt.value = op;
+      opt.textContent = FILTER_OP_LABELS[op];
+      opSel.appendChild(opt);
+    });
+    opSel.value = FILTER_OPS.includes(f.op) ? f.op : 'contains';
+    f.op = opSel.value;
+
+    const valueInput = document.createElement('input');
+    valueInput.type = 'text';
+    valueInput.className = 'filter-value';
+    valueInput.placeholder = 'Filter value';
+    valueInput.setAttribute('aria-label', `Filter ${i + 1} value`);
+    valueInput.value = f.value;
+    valueInput.disabled = colSel.value === 'none' || !filterNeedsValue(f);
+
+    colSel.addEventListener('change', () => {
+      f.index = colSel.value;
+      f.target = selectedTargetName(colSel);
+      valueInput.disabled = colSel.value === 'none' || !filterNeedsValue(f);
+      renderPreview();
+      persist();
+    });
+    opSel.addEventListener('change', () => {
+      f.op = opSel.value;
+      valueInput.disabled = colSel.value === 'none' || !filterNeedsValue(f);
+      renderPreview();
+      persist();
+    });
+    valueInput.addEventListener('input', () => {
+      f.value = valueInput.value;
+      renderPreview();
+      persist();
+    });
+
+    row.appendChild(label);
+    row.appendChild(colSel);
+    row.appendChild(opSel);
+    if (filters.length > 1) {
+      const rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'filter-remove';
+      rm.textContent = '×';
+      rm.title = 'Remove this filter';
+      rm.setAttribute('aria-label', `Remove filter ${i + 1}`);
+      rm.addEventListener('click', () => {
+        filters.splice(i, 1);
+        renderFilterControls();
+        renderPreview();
+        persist();
+      });
+      row.appendChild(rm);
+    }
+    item.appendChild(row);
+    item.appendChild(valueInput);
+    return item;
   }
 
   // Set a select to a saved value only if such an option currently exists.
@@ -1173,45 +1437,23 @@ document.addEventListener('DOMContentLoaded', () => {
     return getOrdering(getTargets()) != null;
   }
 
-  function getFilter(targets) {
+  // The filters that are actually in effect: a valid column plus either a
+  // blank/not-blank op or a non-blank value. Row matching itself lives in
+  // Transforms.rowPassesFilter (unit-tested).
+  function getFilters(targets) {
     targets = targets || getTargets();
-    const value = selectFilterBy.value;
-    if (!/^\d+$/.test(value) || Number(value) >= targets.length) return null;
-    const op = selectFilterOp.value;
-    const needle = inputFilterValue.value;
-    if (op !== 'blank' && op !== 'not-blank' && needle.trim() === '') return null;
-    return { index: Number(value), op, value: needle };
-  }
-
-  function rowPassesFilter(row, filter) {
-    if (!filter) return true;
-    const cell = String(row[filter.index] == null ? '' : row[filter.index]).trim();
-    const needle = String(filter.value == null ? '' : filter.value).trim();
-    const a = cell.toLowerCase();
-    const b = needle.toLowerCase();
-    if (filter.op === 'blank') return cell === '';
-    if (filter.op === 'not-blank') return cell !== '';
-    if (filter.op === 'equals') return a === b;
-    if (filter.op === 'not-equals') return a !== b;
-    if (['gt', 'lt', 'gte', 'lte'].includes(filter.op)) {
-      const numCell = Transforms.asNumber(cell);
-      const numNeedle = Transforms.asNumber(needle);
-      if (numCell !== null && numNeedle !== null) {
-        if (filter.op === 'gt') return numCell > numNeedle;
-        if (filter.op === 'lt') return numCell < numNeedle;
-        if (filter.op === 'gte') return numCell >= numNeedle;
-        if (filter.op === 'lte') return numCell <= numNeedle;
-      }
-      if (filter.op === 'gt') return a > b;
-      if (filter.op === 'lt') return a < b;
-      if (filter.op === 'gte') return a >= b;
-      if (filter.op === 'lte') return a <= b;
+    const out = [];
+    for (const f of filters) {
+      const v = String(f.index);
+      if (!/^\d+$/.test(v) || Number(v) >= targets.length) continue;
+      if (filterNeedsValue(f) && String(f.value).trim() === '') continue;
+      out.push({ index: Number(v), op: f.op, value: f.value });
     }
-    return a.includes(b);
+    return out;
   }
 
   function hasFilter() {
-    return getFilter(getTargets()) != null;
+    return getFilters(getTargets()).length > 0;
   }
 
   // Output column index selected for grouping, or -1. Mirrors the group key in
@@ -1221,40 +1463,36 @@ document.addEventListener('DOMContentLoaded', () => {
     return (/^\d+$/.test(v) && Number(v) < targets.length) ? Number(v) : -1;
   }
 
-  // True when a totals row is requested and there's something to total.
-  function hasTotals() {
-    return false;
-  }
-
   // True when "Combine matching rows" is on and a group column is selected
   // (the checkbox is disabled without one, but guard here too).
   function hasConsolidate() {
     return chkConsolidate.checked && getGroupIndex(getTargets()) !== -1;
   }
 
-  function columnHasNumericValue(rows, index) {
-    return (rows || []).some(row => Transforms.asNumber(row && row[index]) !== null);
-  }
-
-  function chooseSummaryLabelIndex(rows, groupIndex) {
-    if (groupIndex !== -1 && !columnHasNumericValue(rows, groupIndex)) return groupIndex;
-    const width = getTargets().length;
-    for (let i = 0; i < width; i++) {
-      if (!columnHasNumericValue(rows, i)) return i;
-    }
-    return -1;
-  }
-
   // ----------------- Output building -----------------
 
+  // Per-column number style ('us'/'eu') for Clean numbers, detected from a
+  // sample of each mapped source column. null when cleaning is off. Detection
+  // is per column so a US-formatted ID column can't outvote an EU money column.
+  const NUMBER_STYLE_SAMPLE_ROWS = 200;
+  function detectColumnStyles(values) {
+    if (!chkCleanNumbers.checked) return null;
+    const sample = csvRows.slice(0, NUMBER_STYLE_SAMPLE_ROWS);
+    return values.map(v => {
+      const idx = resolveColumnIndex(v);
+      if (idx === -1) return 'us';
+      return Transforms.detectNumberStyle(sample.map(r => r[idx]));
+    });
+  }
+
   // Map one source row to its output cells (mapped, optionally cleaned, sanitized).
-  function buildCells(row, targets, values) {
+  function buildCells(row, targets, values, styles) {
     return targets.map((t, i) => {
       const idx = resolveColumnIndex(values[i]);
       if (idx === -1) return '';
       let val = row[idx] != null ? row[idx] : '';
       if (chkNormalizeDates.checked) val = Transforms.normalizeDate(val);
-      if (chkCleanNumbers.checked) val = Transforms.cleanNumeric(val);
+      if (chkCleanNumbers.checked) val = Transforms.cleanNumeric(val, styles ? styles[i] : 'us');
       // Sanitize so TSV structure survives a paste.
       return String(val).replace(/\t/g, ' ').replace(/\r?\n/g, ' ');
     });
@@ -1262,33 +1500,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Build the output matrix. Pass rowLimit to cap the data rows kept (the live
   // preview only shows a handful); omit it to build every row for copy. When a
-  // sort/group/filter/totals/consolidate is active the result depends on the
-  // whole file, so the fast preview path is skipped — all rows are built,
+  // sort/group/filter/consolidate is active the result depends on the whole
+  // file, so the fast preview path is skipped — all rows are built,
   // transformed, then sliced.
   function buildMatrix(rowLimit) {
     const targets = getTargets();
     const values = getColumnIndices(); // value per target, positionally aligned
+    const styles = detectColumnStyles(values);
     const keys = getOrdering(targets);
-    const filter = getFilter(targets);
-    const wantTotals = hasTotals();
+    const activeFilters = getFilters(targets);
     const wantConsolidate = hasConsolidate();
     const groupIndex = getGroupIndex(targets);
 
-    const limitedPreview = rowLimit != null && !keys && !filter && !wantTotals && !wantConsolidate;
+    const limitedPreview = rowLimit != null && !keys && !activeFilters.length && !wantConsolidate;
     const source = limitedPreview ? csvRows.slice(0, rowLimit) : csvRows;
-    let dataRows = source.map(row => buildCells(row, targets, values));
-    if (filter) dataRows = dataRows.filter(row => rowPassesFilter(row, filter));
-    if (wantConsolidate) dataRows = Transforms.consolidateRows(dataRows, groupIndex);
-    if (keys) dataRows = Transforms.sortRows(dataRows, keys);
-    buildMatrix._lastDataCount = limitedPreview ? csvRows.length : dataRows.length; // real data rows, before any totals
-    buildMatrix._lastOutputDataCount = buildMatrix._lastDataCount;
-    if (wantTotals) {
-      dataRows = Transforms.summarizeRows(dataRows, {
-        groupIndex,
-        labelIndex: chooseSummaryLabelIndex(dataRows, groupIndex)
-      });
-      buildMatrix._lastOutputDataCount = dataRows.length;
+    let dataRows = source.map(row => buildCells(row, targets, values, styles));
+    if (activeFilters.length) {
+      dataRows = dataRows.filter(row => activeFilters.every(f => Transforms.rowPassesFilter(row, f)));
     }
+    if (wantConsolidate) {
+      dataRows = Transforms.consolidateRows(dataRows, groupIndex, { agg: selectConsolidateAgg.value });
+    }
+    if (keys) dataRows = Transforms.sortRows(dataRows, keys);
+    buildMatrix._lastDataCount = limitedPreview ? csvRows.length : dataRows.length;
     if (rowLimit != null) dataRows = dataRows.slice(0, rowLimit);
 
     const matrix = [];
@@ -1327,13 +1561,11 @@ document.addEventListener('DOMContentLoaded', () => {
     ).join('') + '</tbody>';
     previewTable.innerHTML = html;
     previewCard.classList.remove('hidden');
-    const visibleTotal = hasTotals() ? (buildMatrix._lastOutputDataCount || 0) :
-      (hasFilter() || hasConsolidate()) ? (buildMatrix._lastDataCount || 0) : csvRows.length;
+    const visibleTotal = (hasFilter() || hasConsolidate()) ? (buildMatrix._lastDataCount || 0) : csvRows.length;
     if (visibleTotal > previewRowsLimit) {
       const tags = [];
       if (hasOrdering()) tags.push('sorted');
       if (hasConsolidate()) tags.push('combined');
-      if (hasTotals()) tags.push('with totals');
       const ordered = tags.length ? ` (${tags.join(', ')})` : '';
       const filtered = hasFilter() ? ` after filter (${csvRows.length} source rows)` : '';
       const copyNote = hasFilter() ? 'Copy includes every matching row.' : 'Copy includes every row.';
@@ -1402,7 +1634,7 @@ document.addEventListener('DOMContentLoaded', () => {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 0);
-    const n = buildMatrix._lastOutputDataCount == null ? csvRows.length : buildMatrix._lastOutputDataCount;
+    const n = buildMatrix._lastDataCount == null ? csvRows.length : buildMatrix._lastDataCount;
     return n;
   }
 
@@ -1421,7 +1653,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tsv = buildTSV();
     try {
       await navigator.clipboard.writeText(tsv);
-      const n = buildMatrix._lastOutputDataCount == null ? csvRows.length : buildMatrix._lastOutputDataCount;
+      const n = buildMatrix._lastDataCount == null ? csvRows.length : buildMatrix._lastDataCount;
       setStatus('ok', `Copied ${n} row${n === 1 ? '' : 's'}. Click your sheet and press Ctrl/Cmd+V.`);
       hideCopyFallback();
       flashCopied(triggerBtn);
@@ -1471,17 +1703,20 @@ document.addEventListener('DOMContentLoaded', () => {
       cleanNumbers: chkCleanNumbers.checked,
       normalizeDates: chkNormalizeDates.checked,
       consolidate: chkConsolidate.checked,
+      consolidateAgg: selectConsolidateAgg.value,
       rememberFile: chkRememberFile.checked,
       delimiterMode: selectDelimiter.value,
       sortBy: selectSortBy.value,
       sortByTarget: selectedTargetName(selectSortBy),
       sortDir: selectSortDir.value,
+      sortBy2: selectSortBy2.value,
+      sortBy2Target: selectedTargetName(selectSortBy2),
+      sortDir2: selectSortDir2.value,
       groupBy: selectGroupBy.value,
       groupByTarget: selectedTargetName(selectGroupBy),
-      filterBy: selectFilterBy.value,
-      filterByTarget: selectedTargetName(selectFilterBy),
-      filterOp: selectFilterOp.value,
-      filterValue: inputFilterValue.value,
+      // Filters store the column by name (survives header reorders) with the
+      // raw index as a fallback, mirroring the sortBy/sortByTarget pair.
+      filters: filters.map(f => ({ target: f.target, by: f.index, op: f.op, value: f.value })),
       previewRows: previewRowsLimit
     });
   }
@@ -1752,22 +1987,33 @@ document.addEventListener('DOMContentLoaded', () => {
   chkIncludeHeader.addEventListener('change', () => { renderPreview(); persist(); });
   chkCleanNumbers.addEventListener('change', () => { renderPreview(); persist(); });
   chkNormalizeDates.addEventListener('change', () => { renderPreview(); persist(); });
-  chkConsolidate.addEventListener('change', () => { renderPreview(); persist(); });
-  [selectSortBy, selectSortDir, selectGroupBy, selectFilterBy, selectFilterOp].forEach(sel => {
+  chkConsolidate.addEventListener('change', () => {
+    updateConsolidateEnabled(); // the agg picker follows the checkbox
+    renderPreview();
+    persist();
+  });
+  selectConsolidateAgg.addEventListener('change', () => { renderPreview(); persist(); });
+  [selectSortBy, selectSortDir, selectSortBy2, selectSortDir2, selectGroupBy].forEach(sel => {
     sel.addEventListener('change', () => {
-      if (sel === selectSortBy || sel === selectGroupBy || sel === selectFilterBy) {
+      if (sel === selectSortBy || sel === selectSortBy2 || sel === selectGroupBy) {
         rememberSelectedTarget(sel);
       }
-      if (sel === selectFilterBy || sel === selectFilterOp) renderFilterControls();
       if (sel === selectGroupBy) {
         updateConsolidateEnabled();
         if (chkConsolidate.disabled) chkConsolidate.checked = false;
+        updateConsolidateEnabled(); // unchecking above also disables the agg picker
       }
       renderPreview();
       persist();
     });
   });
-  inputFilterValue.addEventListener('input', () => { renderPreview(); persist(); });
+  btnAddFilter.addEventListener('click', () => {
+    filters.push(blankFilter());
+    renderFilterControls();
+    const rows = filterList.querySelectorAll('.filter-item select.order-select');
+    if (rows.length) rows[rows.length - 1].focus();
+    persist();
+  });
   selectPreviewRows.addEventListener('change', () => {
     previewRowsLimit = Number(selectPreviewRows.value) || PREVIEW_ROWS;
     renderPreview();
@@ -1781,10 +2027,14 @@ document.addEventListener('DOMContentLoaded', () => {
         [
           'targetHeaders', 'columnMapping', 'activeMappingPreset',
           'mappingPresets', 'requiredHeaders', 'firstRowHeader', 'includeHeader',
-          'headerOptions', 'skipRows', 'cleanNumbers', 'normalizeDates', 'totals', 'consolidate', 'rememberFile',
-          'delimiterMode', 'sortBy', 'sortByTarget', 'sortDir', 'groupBy', 'groupByTarget',
-          'filterBy', 'filterByTarget', 'filterOp', 'filterValue', 'previewRows',
-          'csvText', 'csvFileName', 'csvDelim'
+          'headerOptions', 'skipRows', 'cleanNumbers', 'normalizeDates',
+          'consolidate', 'consolidateAgg', 'rememberFile',
+          'delimiterMode', 'sortBy', 'sortByTarget', 'sortDir',
+          'sortBy2', 'sortBy2Target', 'sortDir2', 'groupBy', 'groupByTarget',
+          // filters is the current shape; filterBy/filterByTarget/filterOp/
+          // filterValue are the pre-multi-filter keys, read once to migrate.
+          'filters', 'filterBy', 'filterByTarget', 'filterOp', 'filterValue',
+          'previewRows', 'csvText', 'csvFileName', 'csvDelim'
         ]
       ) || {};
       if (typeof data.targetHeaders === 'string') inputTargetHeaders.value = data.targetHeaders;
@@ -1803,6 +2053,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (typeof data.cleanNumbers === 'boolean') chkCleanNumbers.checked = data.cleanNumbers;
       if (typeof data.normalizeDates === 'boolean') chkNormalizeDates.checked = data.normalizeDates;
       if (typeof data.consolidate === 'boolean') chkConsolidate.checked = data.consolidate;
+      if (AGG_OPS.includes(data.consolidateAgg)) selectConsolidateAgg.value = data.consolidateAgg;
       if ([8, 25, 50, 100, 250].includes(data.previewRows)) {
         previewRowsLimit = data.previewRows;
         selectPreviewRows.value = String(data.previewRows);
@@ -1810,8 +2061,24 @@ document.addEventListener('DOMContentLoaded', () => {
       if (typeof data.rememberFile === 'boolean') chkRememberFile.checked = data.rememberFile;
       if (['auto', ',', 'tab', ';', '|'].includes(data.delimiterMode)) selectDelimiter.value = data.delimiterMode;
       if (data.sortDir === 'asc' || data.sortDir === 'desc') selectSortDir.value = data.sortDir;
-      if (['contains', 'equals', 'not-equals', 'blank', 'not-blank', 'gt', 'lt', 'gte', 'lte'].includes(data.filterOp)) selectFilterOp.value = data.filterOp;
-      if (typeof data.filterValue === 'string') inputFilterValue.value = data.filterValue;
+      if (data.sortDir2 === 'asc' || data.sortDir2 === 'desc') selectSortDir2.value = data.sortDir2;
+
+      if (Array.isArray(data.filters)) {
+        filters = data.filters.map(f => f && typeof f === 'object' ? {
+          target: typeof f.target === 'string' ? f.target : '',
+          index: typeof f.by === 'string' ? f.by : 'none',
+          op: FILTER_OPS.includes(f.op) ? f.op : 'contains',
+          value: typeof f.value === 'string' ? f.value : ''
+        } : null).filter(Boolean);
+      } else if (typeof data.filterBy === 'string' || typeof data.filterOp === 'string') {
+        // Migrate the pre-multi-filter single-filter keys into one entry.
+        filters = [{
+          target: typeof data.filterByTarget === 'string' ? data.filterByTarget : '',
+          index: typeof data.filterBy === 'string' ? data.filterBy : 'none',
+          op: FILTER_OPS.includes(data.filterOp) ? data.filterOp : 'contains',
+          value: typeof data.filterValue === 'string' ? data.filterValue : ''
+        }];
+      }
 
       // Rebuild the parsed CSV from the remembered file — only when the user has
       // opted in. Done after skipRows / firstRowHeader are restored above, since
@@ -1819,17 +2086,14 @@ document.addEventListener('DOMContentLoaded', () => {
       // rememberFile is absent → unchecked) is purged cleanly rather than restored.
       if (typeof data.csvText === 'string' && data.csvText !== '') {
         if (chkRememberFile.checked) {
-          loadedText = data.csvText;
-          loadedName = (typeof data.csvFileName === 'string' && data.csvFileName) || 'Restored file';
-          fileLabel.textContent = loadedName;
+          const name = (typeof data.csvFileName === 'string' && data.csvFileName) || 'Restored file';
+          fileLabel.textContent = name;
           fileDrop.classList.add('has-file');
           btnClearFile.classList.remove('hidden');
-          detectedDelim = (selectDelimiter.value === 'auto' && isSupportedDelimiter(data.csvDelim))
-            ? data.csvDelim
-            : selectedDelimiter(data.csvText);
-          rawRows = Transforms.parseCSV(data.csvText, detectedDelim);
-          applyHeaderMode();
-          setCollapsed(moduleUpload, headUpload, true); // remembered file: start folded
+          const explicit = explicitDelimiter() ||
+            (isSupportedDelimiter(data.csvDelim) ? data.csvDelim : null);
+          // persist:false — this text just came out of storage; don't rewrite it.
+          await loadFromText(data.csvText, name, { explicitDelim: explicit, persist: false });
         } else {
           clearPersistedFile(); // opted out / legacy data: purge the stale copy
         }
@@ -1840,13 +2104,15 @@ document.addEventListener('DOMContentLoaded', () => {
     renderMappingPresets();
     renderPresets();   // re-render with the restored palette (also refreshes active state)
     renderMapping();   // populates the Sort by / Group by option lists
-    // Apply saved sort/group/filter now that the option lists exist. Prefer the
-    // target header name so reordering headers doesn't change the selected metric.
+    // Apply saved sort/group now that the option lists exist. Prefer the target
+    // header name so reordering headers doesn't change the selected metric.
+    // (Filters resolve their own names inside renderFilterControls.)
     trySelectTarget(selectSortBy, data.sortByTarget, data.sortBy);
+    trySelectTarget(selectSortBy2, data.sortBy2Target, data.sortBy2);
     trySelectTarget(selectGroupBy, data.groupByTarget, data.groupBy);
-    trySelectTarget(selectFilterBy, data.filterByTarget, data.filterBy);
     updateConsolidateEnabled(); // re-check now that the restored group selection is applied
     renderFilterControls(getTargets());
+    maybeExpandAdvanced(); // active settings shouldn't hide behind the fold
     renderPreview();
   }
 

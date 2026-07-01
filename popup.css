@@ -691,13 +691,54 @@ textarea:focus, select:focus {
   padding-top: 10px;
   border-top: 1px solid var(--g-grey-100);
 }
+/* One filter item = a column/op row plus its value input; items stack with a
+   little air between them. The × removes that filter. */
+.filter-item { display: flex; flex-direction: column; gap: 8px; }
+.filter-item + .filter-item { margin-top: 10px; }
 .filter-row {
   display: grid;
-  grid-template-columns: 62px 1fr auto;
+  grid-template-columns: 62px 1fr auto auto;
   gap: 8px;
   align-items: center;
 }
+.filter-row.no-remove { grid-template-columns: 62px 1fr auto; }
+.filter-remove {
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  width: 24px; height: 24px;
+  padding: 0;
+  border: 1px solid var(--g-grey-300);
+  border-radius: 8px;
+  background: var(--g-grey-50);
+  color: var(--g-grey-600);
+  cursor: pointer;
+  transition: color .12s, border-color .12s, background .12s;
+}
+.filter-remove:hover {
+  color: var(--g-red);
+  border-color: color-mix(in srgb, var(--g-red) 45%, var(--g-grey-300));
+  background: color-mix(in srgb, var(--g-red) 6%, #fff);
+}
+.add-filter-btn { align-self: flex-start; }
+.filter-controls .hint { margin-top: 0; }
 .filter-controls select { padding: 7px 9px; cursor: pointer; min-width: 0; }
+
+/* Combine matching rows + its aggregation picker share one line. */
+.consolidate-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.consolidate-row .switch-row { margin-top: 12px; flex: 1 1 auto; min-width: 0; }
+.agg-select {
+  width: auto;
+  margin-top: 12px;
+  padding: 6px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.agg-select:disabled { color: var(--g-grey-400); cursor: not-allowed; }
 .filter-value {
   width: 100%;
   font-family: var(--font-display);

@@ -175,38 +175,43 @@
               </select>
             </div>
             <div class="order-row">
+              <label class="order-label" for="select-sort-by-2">Then by</label>
+              <select id="select-sort-by-2" class="order-select">
+                <option value="none">— none —</option>
+              </select>
+              <select id="select-sort-dir-2" class="order-dir" aria-label="Secondary sort direction">
+                <option value="asc">↑ Asc</option>
+                <option value="desc">↓ Desc</option>
+              </select>
+            </div>
+            <div class="order-row">
               <label class="order-label" for="select-group-by">Group by</label>
               <select id="select-group-by" class="order-select">
                 <option value="none">— no grouping —</option>
               </select>
             </div>
-            <label class="switch-row" title="Merge rows that share the same group value and match on every other column, summing their numeric columns into one row">
-              <input type="checkbox" id="chk-consolidate" disabled>
-              <span class="track"></span>
-              <span class="switch-label">Combine matching rows</span>
-            </label>
-            <div class="hint">Group clusters rows with the same value together; sort orders rows within each group.
-              Combine merges rows that share a group value and every other column, summing the rest.</div>
-          </div>
-          <div class="filter-controls">
-            <div class="filter-row">
-              <label class="order-label" for="select-filter-by">Filter</label>
-              <select id="select-filter-by" class="order-select">
-                <option value="none">No filter</option>
-              </select>
-              <select id="select-filter-op" class="order-dir" aria-label="Filter operation">
-                <option value="contains">Contains</option>
-                <option value="equals">Equals</option>
-                <option value="not-equals">Not equals</option>
-                <option value="blank">Blank</option>
-                <option value="not-blank">Not blank</option>
-                <option value="gt">&gt; Greater than</option>
-                <option value="lt">&lt; Less than</option>
-                <option value="gte">&ge; Greater or equal</option>
-                <option value="lte">&le; Less or equal</option>
+            <div class="consolidate-row">
+              <label class="switch-row" title="Merge rows that share the same group value and match on every other column, aggregating their numeric columns into one row">
+                <input type="checkbox" id="chk-consolidate" disabled>
+                <span class="track"></span>
+                <span class="switch-label">Combine matching rows</span>
+              </label>
+              <select id="select-consolidate-agg" class="agg-select" disabled
+                aria-label="How combined rows aggregate numeric columns">
+                <option value="sum">Sum</option>
+                <option value="avg">Average</option>
+                <option value="count">Count</option>
+                <option value="min">Min</option>
+                <option value="max">Max</option>
               </select>
             </div>
-            <input type="text" id="input-filter-value" class="filter-value" placeholder="Filter value">
+            <div class="hint">Group clusters rows with the same value together; sort orders rows within each group.
+              Combine merges rows that share a group value and every other column, aggregating the rest.</div>
+          </div>
+          <div class="filter-controls">
+            <div id="filter-list"></div>
+            <button id="btn-add-filter" type="button" class="link-btn add-filter-btn">+ Add filter</button>
+            <div class="hint">Rows must match every filter to be kept.</div>
           </div>
         </div>
       </div>

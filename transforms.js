@@ -4,7 +4,9 @@
   // Normalize a clearly-numeric string (currency/thousands stripped) so Google
   // Sheets treats it as a number. Anything not clearly numeric is returned
   // unchanged. Percent values are left untouched (Sheets parses them itself).
-  function cleanNumeric(value) {
+  // `style` is 'us' (default: "." decimal, "," thousands) or 'eu' (the reverse);
+  // EU output is rewritten to the "." decimal form Sheets expects.
+  function cleanNumeric(value, style) {
     const original = value;
     let s = String(value == null ? '' : value).trim();
     if (s === '') return original;
@@ -17,12 +19,70 @@
     // Strip currency symbols and every space variant (\s covers NBSP + narrow NBSP).
     s = s.replace(/[\s$€£¥₹]/g, '');
 
-    if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) {
+    if (style === 'eu') {
+      if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) {
+        s = s.replace(/\./g, '').replace(',', '.'); // EU grouped -> drop dots, comma decimal -> dot
+      } else if (/^\d+(,\d+)?$/.test(s)) {
+        s = s.replace(',', '.');                    // bare EU decimal comma
+      } else {
+        return original;                            // not a clean EU number
+      }
+    } else if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) {
       s = s.replace(/,/g, '');           // US grouped -> remove commas
     } else if (!/^\d+(\.\d+)?$/.test(s)) {
       return original;                    // not a clean number
     }
     return (neg ? '-' : '') + s;
+  }
+
+  // Sniff whether a column of raw values uses US ("1,234.56") or EU ("1.234,56")
+  // number conventions. Each value votes only when its separators are decisive
+  // (both present, a decimal comma like "12,5", or repeated grouping); a bare
+  // "1,234" or "1.234" is ambiguous and abstains. Ties default to 'us', keeping
+  // the pre-detection behavior for files with no EU evidence.
+  function detectNumberStyle(values) {
+    let us = 0, eu = 0;
+    for (const raw of values || []) {
+      let s = String(raw == null ? '' : raw).trim();
+      if (!s) continue;
+      s = s.replace(/[()%\s$€£¥₹-]/g, '');
+      if (!/^\d[\d.,]*$/.test(s)) continue;
+      const commas = (s.match(/,/g) || []).length;
+      const dots = (s.match(/\./g) || []).length;
+      if (commas && dots) {
+        if (s.lastIndexOf('.') < s.lastIndexOf(',')) eu++; else us++;
+      } else if (commas) {
+        if (/^\d+,\d{1,2}$/.test(s)) eu++;        // decimal comma: 12,5
+        else if (commas > 1) us++;                 // repeated grouping: 1,234,567
+      } else if (dots) {
+        if (/^\d+\.\d{1,2}$/.test(s)) us++;        // decimal dot: 12.5
+        else if (dots > 1) eu++;                   // repeated grouping: 1.234.567
+      }
+    }
+    return eu > us ? 'eu' : 'us';
+  }
+
+  // Decode a CSV file's raw bytes to text. Honors UTF-8 / UTF-16LE / UTF-16BE
+  // BOMs, and falls back to a NUL-byte heuristic for BOM-less UTF-16 (CSV text
+  // is mostly ASCII, so UTF-16 puts a NUL in nearly every other byte). Default
+  // is UTF-8, whose decoder also strips a UTF-8 BOM itself.
+  function decodeBytes(input) {
+    const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+    if (bytes.length >= 2) {
+      if (bytes[0] === 0xFF && bytes[1] === 0xFE) return new TextDecoder('utf-16le').decode(bytes.subarray(2));
+      if (bytes[0] === 0xFE && bytes[1] === 0xFF) return new TextDecoder('utf-16be').decode(bytes.subarray(2));
+    }
+    const sample = bytes.subarray(0, Math.min(bytes.length, 4096));
+    if (sample.length >= 16) {
+      let evenNul = 0, oddNul = 0;
+      for (let i = 0; i < sample.length; i++) {
+        if (sample[i] === 0) { if (i % 2 === 0) evenNul++; else oddNul++; }
+      }
+      const half = sample.length / 2;
+      if (oddNul > half * 0.6 && evenNul < half * 0.1) return new TextDecoder('utf-16le').decode(bytes);
+      if (evenNul > half * 0.6 && oddNul < half * 0.1) return new TextDecoder('utf-16be').decode(bytes);
+    }
+    return new TextDecoder('utf-8').decode(bytes);
   }
 
   function pad2(n) {
@@ -258,68 +318,34 @@
       .map(d => d.row);
   }
 
-  // Sum the numeric cells of `rows` per column (currency/percent/thousands aware
-  // via asNumber). Returns one string per column: the column total as a plain
-  // number where any cell was numeric, otherwise ''. Float noise from summing is
-  // rounded off (to 6 decimals) so totals read cleanly in a sheet.
-  function sumColumns(rows) {
-    const list = rows || [];
-    const sums = [];
-    const seen = [];
-    let width = 0;
-    list.forEach(r => {
-      const row = r || [];
-      if (row.length > width) width = row.length;
-      row.forEach((cell, i) => {
-        const n = asNumber(cell);
-        if (n !== null) { sums[i] = (sums[i] || 0) + n; seen[i] = true; }
-      });
-    });
-    const out = [];
-    for (let i = 0; i < width; i++) {
-      out.push(seen[i] ? String(Math.round(sums[i] * 1e6) / 1e6) : '');
-    }
-    return out;
-  }
-
-  // Append summary rows that sum the numeric columns. With a groupIndex the rows
-  // (which must already be sorted so equal group values are contiguous) get a
-  // subtotal row after each group; a grand-total row is appended when there is
-  // more than one group, or always when ungrouped. The label string is written
-  // into `labelIndex` (the group column when grouping, else column 0), overwriting
-  // that column's own sum. Returns a new array; the input is not mutated.
-  function summarizeRows(rows, opts) {
-    opts = opts || {};
-    const list = rows || [];
-    const groupIndex = (opts.groupIndex != null && opts.groupIndex >= 0) ? opts.groupIndex : -1;
-    const labelIndex = opts.labelIndex == null ? 0 : (opts.labelIndex >= 0 ? opts.labelIndex : -1);
-    const totalLabel = opts.totalLabel != null ? opts.totalLabel : 'Total';
-    const subtotalLabel = opts.subtotalLabel != null ? opts.subtotalLabel : 'Subtotal';
-    if (list.length === 0) return [];
-
-    const summaryFor = (group, label) => {
-      const sums = sumColumns(group);
-      if (labelIndex !== -1) sums[labelIndex] = label;
-      return sums;
-    };
-
-    const out = [];
-    if (groupIndex !== -1) {
-      let i = 0, groups = 0;
-      while (i < list.length) {
-        const key = list[i][groupIndex];
-        const group = [];
-        while (i < list.length && list[i][groupIndex] === key) { group.push(list[i]); i++; }
-        group.forEach(r => out.push(r));
-        out.push(summaryFor(group, `${subtotalLabel}: ${key}`));
-        groups++;
+  // Does one output row pass a single filter? `filter` is { index, op, value }.
+  // Comparisons are case-insensitive; gt/lt/gte/lte compare numerically when both
+  // sides parse as numbers (currency/percent aware via asNumber), else as text.
+  function rowPassesFilter(row, filter) {
+    if (!filter) return true;
+    const cell = String(row[filter.index] == null ? '' : row[filter.index]).trim();
+    const needle = String(filter.value == null ? '' : filter.value).trim();
+    const a = cell.toLowerCase();
+    const b = needle.toLowerCase();
+    if (filter.op === 'blank') return cell === '';
+    if (filter.op === 'not-blank') return cell !== '';
+    if (filter.op === 'equals') return a === b;
+    if (filter.op === 'not-equals') return a !== b;
+    if (['gt', 'lt', 'gte', 'lte'].includes(filter.op)) {
+      const numCell = asNumber(cell);
+      const numNeedle = asNumber(needle);
+      if (numCell !== null && numNeedle !== null) {
+        if (filter.op === 'gt') return numCell > numNeedle;
+        if (filter.op === 'lt') return numCell < numNeedle;
+        if (filter.op === 'gte') return numCell >= numNeedle;
+        if (filter.op === 'lte') return numCell <= numNeedle;
       }
-      if (groups > 1) out.push(summaryFor(list, totalLabel)); // skip if it duplicates the lone subtotal
-    } else {
-      list.forEach(r => out.push(r));
-      out.push(summaryFor(list, totalLabel));
+      if (filter.op === 'gt') return a > b;
+      if (filter.op === 'lt') return a < b;
+      if (filter.op === 'gte') return a >= b;
+      if (filter.op === 'lte') return a <= b;
     }
-    return out;
+    return a.includes(b);
   }
 
   // A column counts as numeric (summable) only when every non-blank cell in it
@@ -338,13 +364,16 @@
 
   // Merge rows that share the same value in every non-numeric ("key") column —
   // groupIndex is always treated as a key column even if it happens to look
-  // numeric, since it's the field the caller explicitly grouped by — and sum
-  // their numeric columns into one row. Rows that differ in any key column
-  // (e.g. same date, different app) are left separate. Order follows first
-  // occurrence of each key. Returns a new array; the input is not mutated.
-  function consolidateRows(rows, groupIndex) {
+  // numeric, since it's the field the caller explicitly grouped by — and
+  // aggregate their numeric columns into one row. Rows that differ in any key
+  // column (e.g. same date, different app) are left separate. Order follows
+  // first occurrence of each key. `opts.agg` picks the aggregation applied to
+  // each numeric column's values: 'sum' (default), 'avg', 'count', 'min', 'max'.
+  // Returns a new array; the input is not mutated.
+  function consolidateRows(rows, groupIndex, opts) {
     const list = rows || [];
     if (groupIndex == null || groupIndex < 0 || list.length === 0) return list.slice();
+    const agg = (opts && opts.agg) || 'sum';
 
     let width = 0;
     list.forEach(r => { if ((r || []).length > width) width = r.length; });
@@ -360,15 +389,24 @@
       groups.get(key).push(row);
     });
 
+    const aggregate = (nums) => {
+      if (agg === 'count') return nums.length;
+      if (nums.length === 0) return 0;
+      if (agg === 'avg') return nums.reduce((a, b) => a + b, 0) / nums.length;
+      if (agg === 'min') return Math.min.apply(null, nums);
+      if (agg === 'max') return Math.max.apply(null, nums);
+      return nums.reduce((a, b) => a + b, 0);
+    };
+
     return order.map(key => {
       const group = groups.get(key);
-      if (group.length === 1) return group[0];
+      if (group.length === 1 && agg !== 'count') return group[0];
       const merged = group[0].slice();
       for (let i = 0; i < width; i++) {
         if (!numericCols[i]) continue;
-        let sum = 0;
-        group.forEach(r => { const n = asNumber(r[i]); if (n !== null) sum += n; });
-        merged[i] = String(Math.round(sum * 1e6) / 1e6);
+        const nums = [];
+        group.forEach(r => { const n = asNumber(r[i]); if (n !== null) nums.push(n); });
+        merged[i] = String(Math.round(aggregate(nums) * 1e6) / 1e6);
       }
       return merged;
     });
@@ -386,11 +424,12 @@
   }
 
   const api = {
-    cleanNumeric, normalizeDate, splitRows, splitTargets,
+    cleanNumeric, detectNumberStyle, decodeBytes, normalizeDate,
+    splitRows, splitTargets,
     parseCSV, detectDelimiter, normalizeString,
     headerMatchConfidence, autoMatchIndex,
-    asNumber, compareValues, sortRows,
-    sumColumns, summarizeRows, consolidateRows, toCSV
+    asNumber, compareValues, sortRows, rowPassesFilter,
+    consolidateRows, toCSV
   };
   root.Transforms = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
