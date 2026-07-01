@@ -172,7 +172,13 @@
             <option value="none">— no grouping —</option>
           </select>
         </div>
-        <div class="hint">Group clusters rows with the same value together; sort orders rows within each group.</div>
+        <label class="switch-row" title="Merge rows that share the same group value and match on every other column, summing their numeric columns into one row">
+          <input type="checkbox" id="chk-consolidate" disabled>
+          <span class="track"></span>
+          <span class="switch-label">Combine matching rows</span>
+        </label>
+        <div class="hint">Group clusters rows with the same value together; sort orders rows within each group.
+          Combine merges rows that share a group value and every other column, summing the rest.</div>
       </div>
       <div class="filter-controls">
         <div class="filter-row">
@@ -259,6 +265,14 @@
       <div class="module-head">
         <span class="module-num dot">•</span>
         <h2>Preview</h2>
+        <label class="preview-rows-label" for="select-preview-rows">Show</label>
+        <select id="select-preview-rows" class="preview-rows-select" aria-label="Preview row count">
+          <option value="8">8 rows</option>
+          <option value="25">25 rows</option>
+          <option value="50">50 rows</option>
+          <option value="100">100 rows</option>
+          <option value="250">250 rows</option>
+        </select>
       </div>
       <div class="preview-wrap">
         <table id="preview-table"></table>

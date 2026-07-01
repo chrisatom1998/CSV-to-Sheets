@@ -20,9 +20,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const selectSortBy = document.getElementById('select-sort-by');
   const selectSortDir = document.getElementById('select-sort-dir');
   const selectGroupBy = document.getElementById('select-group-by');
+  const chkConsolidate = document.getElementById('chk-consolidate');
   const selectFilterBy = document.getElementById('select-filter-by');
   const selectFilterOp = document.getElementById('select-filter-op');
   const inputFilterValue = document.getElementById('input-filter-value');
+  const selectPreviewRows = document.getElementById('select-preview-rows');
   const presetChips = document.getElementById('preset-chips');
   const mappingList = document.getElementById('mapping-list');
   const mappingHealth = document.getElementById('mapping-health');
@@ -67,6 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const LARGE_FILE_BYTES = 5 * 1024 * 1024;
   const LARGE_ROW_COUNT = 50000;
   const PREVIEW_ROWS = 8;
+  let previewRowsLimit = PREVIEW_ROWS; // current "Show" selection on the Preview card
   // Cap on remembering an uploaded file across popup sessions. The "unlimitedStorage"
   // permission lifts chrome.storage.local's default 5 MB quota, so this is just a
   // deliberate ceiling rather than a quota workaround; files above it aren't persisted
@@ -1056,6 +1059,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const t = targets || getTargets();
     fillOrderSelect(selectSortBy, t, '— original order —');
     fillOrderSelect(selectGroupBy, t, '— no grouping —');
+    updateConsolidateEnabled();
+  }
+
+  // "Combine matching rows" only makes sense once a group column is chosen.
+  function updateConsolidateEnabled() {
+    chkConsolidate.disabled = selectGroupBy.value === 'none';
   }
 
   function renderFilterControls(targets) {
@@ -1141,6 +1150,12 @@ document.addEventListener('DOMContentLoaded', () => {
     return chkTotals.checked && getTargets().length > 0 && csvHeaders.length > 0;
   }
 
+  // True when "Combine matching rows" is on and a group column is selected
+  // (the checkbox is disabled without one, but guard here too).
+  function hasConsolidate() {
+    return chkConsolidate.checked && getGroupIndex(getTargets()) !== -1;
+  }
+
   function columnHasNumericValue(rows, index) {
     return (rows || []).some(row => Transforms.asNumber(row && row[index]) !== null);
   }
@@ -1171,24 +1186,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Build the output matrix. Pass rowLimit to cap the data rows kept (the live
   // preview only shows a handful); omit it to build every row for copy. When a
-  // sort/group/filter/totals is active the result depends on the whole file, so
-  // the fast preview path is skipped — all rows are built, transformed, then sliced.
+  // sort/group/filter/totals/consolidate is active the result depends on the
+  // whole file, so the fast preview path is skipped — all rows are built,
+  // transformed, then sliced.
   function buildMatrix(rowLimit) {
     const targets = getTargets();
     const values = getColumnIndices(); // value per target, positionally aligned
     const keys = getOrdering(targets);
     const filter = getFilter(targets);
     const wantTotals = hasTotals();
+    const wantConsolidate = hasConsolidate();
+    const groupIndex = getGroupIndex(targets);
 
-    const limitedPreview = rowLimit != null && !keys && !filter && !wantTotals;
+    const limitedPreview = rowLimit != null && !keys && !filter && !wantTotals && !wantConsolidate;
     const source = limitedPreview ? csvRows.slice(0, rowLimit) : csvRows;
     let dataRows = source.map(row => buildCells(row, targets, values));
     if (filter) dataRows = dataRows.filter(row => rowPassesFilter(row, filter));
+    if (wantConsolidate) dataRows = Transforms.consolidateRows(dataRows, groupIndex);
     if (keys) dataRows = Transforms.sortRows(dataRows, keys);
     buildMatrix._lastDataCount = limitedPreview ? csvRows.length : dataRows.length; // real data rows, before any totals
     buildMatrix._lastOutputDataCount = buildMatrix._lastDataCount;
     if (wantTotals) {
-      const groupIndex = getGroupIndex(targets);
       dataRows = Transforms.summarizeRows(dataRows, {
         groupIndex,
         labelIndex: chooseSummaryLabelIndex(dataRows, groupIndex)
@@ -1218,12 +1236,13 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Only the first 8 data rows are shown, so only build those — a full-matrix
-    // build on every keystroke would scan the whole file (50k+ rows) for nothing.
-    const matrix = buildMatrix(PREVIEW_ROWS);
+    // Only the selected number of data rows are shown, so only build those — a
+    // full-matrix build on every keystroke would scan the whole file (50k+ rows)
+    // for nothing.
+    const matrix = buildMatrix(previewRowsLimit);
     const hasHeader = chkIncludeHeader.checked;
     const headerCells = hasHeader ? matrix[0] : targets;
-    const dataRows = (hasHeader ? matrix.slice(1) : matrix).slice(0, PREVIEW_ROWS);
+    const dataRows = (hasHeader ? matrix.slice(1) : matrix).slice(0, previewRowsLimit);
 
     let html = '<thead><tr>' + headerCells.map(h => `<th>${escapeHtml(h)}</th>`).join('') + '</tr></thead>';
     html += '<tbody>' + dataRows.map(r =>
@@ -1232,15 +1251,16 @@ document.addEventListener('DOMContentLoaded', () => {
     previewTable.innerHTML = html;
     previewCard.classList.remove('hidden');
     const visibleTotal = hasTotals() ? (buildMatrix._lastOutputDataCount || 0) :
-      hasFilter() ? (buildMatrix._lastDataCount || 0) : csvRows.length;
-    if (visibleTotal > PREVIEW_ROWS) {
+      (hasFilter() || hasConsolidate()) ? (buildMatrix._lastDataCount || 0) : csvRows.length;
+    if (visibleTotal > previewRowsLimit) {
       const tags = [];
       if (hasOrdering()) tags.push('sorted');
+      if (hasConsolidate()) tags.push('combined');
       if (hasTotals()) tags.push('with totals');
       const ordered = tags.length ? ` (${tags.join(', ')})` : '';
       const filtered = hasFilter() ? ` after filter (${csvRows.length} source rows)` : '';
       const copyNote = hasFilter() ? 'Copy includes every matching row.' : 'Copy includes every row.';
-      previewNote.textContent = `Showing first ${PREVIEW_ROWS} of ${visibleTotal} rows${ordered}${filtered}. ${copyNote}`;
+      previewNote.textContent = `Showing first ${previewRowsLimit} of ${visibleTotal} rows${ordered}${filtered}. ${copyNote}`;
       previewNote.classList.remove('hidden');
     } else {
       previewNote.classList.add('hidden');
@@ -1374,6 +1394,7 @@ document.addEventListener('DOMContentLoaded', () => {
       cleanNumbers: chkCleanNumbers.checked,
       totals: chkTotals.checked,
       normalizeDates: chkNormalizeDates.checked,
+      consolidate: chkConsolidate.checked,
       rememberFile: chkRememberFile.checked,
       delimiterMode: selectDelimiter.value,
       sortBy: selectSortBy.value,
@@ -1384,7 +1405,8 @@ document.addEventListener('DOMContentLoaded', () => {
       filterBy: selectFilterBy.value,
       filterByTarget: selectedTargetName(selectFilterBy),
       filterOp: selectFilterOp.value,
-      filterValue: inputFilterValue.value
+      filterValue: inputFilterValue.value,
+      previewRows: previewRowsLimit
     });
   }
 
@@ -1629,17 +1651,27 @@ document.addEventListener('DOMContentLoaded', () => {
   chkCleanNumbers.addEventListener('change', () => { renderPreview(); persist(); });
   chkTotals.addEventListener('change', () => { renderPreview(); persist(); });
   chkNormalizeDates.addEventListener('change', () => { renderPreview(); persist(); });
+  chkConsolidate.addEventListener('change', () => { renderPreview(); persist(); });
   [selectSortBy, selectSortDir, selectGroupBy, selectFilterBy, selectFilterOp].forEach(sel => {
     sel.addEventListener('change', () => {
       if (sel === selectSortBy || sel === selectGroupBy || sel === selectFilterBy) {
         rememberSelectedTarget(sel);
       }
       if (sel === selectFilterBy || sel === selectFilterOp) renderFilterControls();
+      if (sel === selectGroupBy) {
+        updateConsolidateEnabled();
+        if (chkConsolidate.disabled) chkConsolidate.checked = false;
+      }
       renderPreview();
       persist();
     });
   });
   inputFilterValue.addEventListener('input', () => { renderPreview(); persist(); });
+  selectPreviewRows.addEventListener('change', () => {
+    previewRowsLimit = Number(selectPreviewRows.value) || PREVIEW_ROWS;
+    renderPreview();
+    persist();
+  });
 
   async function restore() {
     let data = {};
@@ -1648,9 +1680,9 @@ document.addEventListener('DOMContentLoaded', () => {
         [
           'targetHeaders', 'columnMapping', 'activeMappingPreset',
           'mappingPresets', 'requiredHeaders', 'firstRowHeader', 'includeHeader',
-          'headerOptions', 'skipRows', 'cleanNumbers', 'normalizeDates', 'totals', 'rememberFile',
+          'headerOptions', 'skipRows', 'cleanNumbers', 'normalizeDates', 'totals', 'consolidate', 'rememberFile',
           'delimiterMode', 'sortBy', 'sortByTarget', 'sortDir', 'groupBy', 'groupByTarget',
-          'filterBy', 'filterByTarget', 'filterOp', 'filterValue',
+          'filterBy', 'filterByTarget', 'filterOp', 'filterValue', 'previewRows',
           'csvText', 'csvFileName', 'csvDelim'
         ]
       ) || {};
@@ -1670,6 +1702,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (typeof data.cleanNumbers === 'boolean') chkCleanNumbers.checked = data.cleanNumbers;
       if (typeof data.totals === 'boolean') chkTotals.checked = data.totals;
       if (typeof data.normalizeDates === 'boolean') chkNormalizeDates.checked = data.normalizeDates;
+      if (typeof data.consolidate === 'boolean') chkConsolidate.checked = data.consolidate;
+      if ([8, 25, 50, 100, 250].includes(data.previewRows)) {
+        previewRowsLimit = data.previewRows;
+        selectPreviewRows.value = String(data.previewRows);
+      }
       if (typeof data.rememberFile === 'boolean') chkRememberFile.checked = data.rememberFile;
       if (['auto', ',', 'tab', ';', '|'].includes(data.delimiterMode)) selectDelimiter.value = data.delimiterMode;
       if (data.sortDir === 'asc' || data.sortDir === 'desc') selectSortDir.value = data.sortDir;
@@ -1708,6 +1745,7 @@ document.addEventListener('DOMContentLoaded', () => {
     trySelectTarget(selectSortBy, data.sortByTarget, data.sortBy);
     trySelectTarget(selectGroupBy, data.groupByTarget, data.groupBy);
     trySelectTarget(selectFilterBy, data.filterByTarget, data.filterBy);
+    updateConsolidateEnabled(); // re-check now that the restored group selection is applied
     renderFilterControls(getTargets());
     renderPreview();
   }

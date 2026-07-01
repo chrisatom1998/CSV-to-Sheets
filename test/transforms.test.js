@@ -360,3 +360,50 @@ test('toCSV: quotes fields containing commas, quotes, or newlines', () => {
 test('toCSV: leaves plain fields unquoted and handles blanks/null', () => {
   assert.strictEqual(toCSV([['plain', '', null, undefined]]), 'plain,,,');
 });
+
+const { consolidateRows } = require('../transforms.js');
+
+test('consolidateRows: sums numeric columns for rows sharing the group + other key columns', () => {
+  const rows = [
+    ['App A', '2024-01-01', '10', '100'],
+    ['App A', '2024-01-01', '5', '50'],
+    ['App A', '2024-01-02', '7', '70']
+  ];
+  assert.deepStrictEqual(consolidateRows(rows, 1), [
+    ['App A', '2024-01-01', '15', '150'],
+    ['App A', '2024-01-02', '7', '70']
+  ]);
+});
+
+test('consolidateRows: rows with the same group but differing key columns stay separate', () => {
+  const rows = [
+    ['App A', '2024-01-01', '10'],
+    ['App B', '2024-01-01', '20']
+  ];
+  assert.deepStrictEqual(consolidateRows(rows, 1), rows);
+});
+
+test('consolidateRows: groupIndex column is never summed even if it looks numeric', () => {
+  const rows = [
+    ['1', 'x', '10'],
+    ['1', 'x', '20']
+  ];
+  assert.deepStrictEqual(consolidateRows(rows, 0), [['1', 'x', '30']]);
+});
+
+test('consolidateRows: no-op when groupIndex is missing or rows are empty', () => {
+  assert.deepStrictEqual(consolidateRows([['a', '1']], -1), [['a', '1']]);
+  assert.deepStrictEqual(consolidateRows([], 0), []);
+});
+
+test('consolidateRows: preserves first-occurrence order of groups', () => {
+  const rows = [
+    ['b', '1'],
+    ['a', '1'],
+    ['b', '2']
+  ];
+  assert.deepStrictEqual(consolidateRows(rows, 0), [
+    ['b', '3'],
+    ['a', '1']
+  ]);
+});
