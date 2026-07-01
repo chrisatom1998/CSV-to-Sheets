@@ -407,3 +407,4 @@ test('consolidateRows: preserves first-occurrence order of groups', () => {
     ['a', '1']
   ]);
 });
+

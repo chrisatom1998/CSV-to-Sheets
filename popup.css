@@ -522,7 +522,27 @@ textarea:focus, select:focus {
   transition: box-shadow .15s, transform .08s, opacity .12s;
 }
 .header-bubble:active { cursor: grabbing; }
-.header-bubble.dragging { opacity: .5; }
+.header-bubble.dragging { opacity: .25; }
+/* Grey dashed ghost shown at the insertion point during a drag reorder */
+.drag-placeholder {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1.5px dashed var(--g-grey-400);
+  background: color-mix(in srgb, var(--g-grey-300) 30%, transparent);
+  color: var(--g-grey-500);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  pointer-events: none;
+  white-space: nowrap;
+  animation: placeholder-in .15s ease both;
+}
+@keyframes placeholder-in {
+  from { opacity: 0; transform: scale(.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
 .header-bubble.required { box-shadow: 0 0 0 2px #fff, 0 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent); }
 .header-bubble:focus-visible {
   outline: 2px solid var(--g-grey-900);
@@ -736,7 +756,7 @@ textarea:focus, select:focus {
 .btn-copy:disabled { background: var(--g-grey-300); color: var(--g-grey-600); box-shadow: none; cursor: not-allowed; }
 .btn-icon { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
-.btn-download-tsv {
+.btn-download-tsv, .btn-download-csv {
   min-width: 76px;
   display: flex;
   align-items: center;
@@ -753,12 +773,12 @@ textarea:focus, select:focus {
   cursor: pointer;
   transition: filter .15s, transform .08s, box-shadow .15s, background .15s;
 }
-.btn-download-tsv:hover:not(:disabled) {
+.btn-download-tsv:hover:not(:disabled), .btn-download-csv:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 16%, #fff);
   box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 20%, transparent);
 }
-.btn-download-tsv:active:not(:disabled) { transform: translateY(1px) scale(.995); }
-.btn-download-tsv:disabled {
+.btn-download-tsv:active:not(:disabled), .btn-download-csv:active:not(:disabled) { transform: translateY(1px) scale(.995); }
+.btn-download-tsv:disabled, .btn-download-csv:disabled {
   border-color: var(--g-grey-300);
   background: var(--g-grey-100);
   color: var(--g-grey-500);

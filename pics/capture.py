@@ -102,8 +102,7 @@ def main():
         raw = page.screenshot(full_page=False)
         save(composite(raw), pics / "04_column_mapping.png")
 
-        # ---- 5. Preview with totals + sorting ----
-        page.evaluate("document.getElementById('chk-totals').click()")
+        # ---- 5. Preview with sorting ----
         page.select_option("#select-sort-by", "2")
         page.evaluate(
             "document.getElementById('select-sort-by')"
