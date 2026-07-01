@@ -154,51 +154,61 @@
         <span class="module-num">4</span>
         <h2>Copy &amp; paste</h2>
       </div>
-      <div class="subhead">Arrange rows</div>
-      <div class="order-controls">
-        <div class="order-row">
-          <label class="order-label" for="select-sort-by">Sort by</label>
-          <select id="select-sort-by" class="order-select">
-            <option value="none">— original order —</option>
-          </select>
-          <select id="select-sort-dir" class="order-dir" aria-label="Sort direction">
-            <option value="asc">↑ Asc</option>
-            <option value="desc">↓ Desc</option>
-          </select>
+      <div class="subsection collapsible collapsed" id="subsection-advanced">
+        <div class="subsection-head" id="head-advanced" role="button" tabindex="0"
+             aria-expanded="false" aria-controls="body-advanced">
+          <h3>Advanced options</h3>
+          <span class="subsection-summary" id="advanced-summary"></span>
+          <svg class="collapse-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
         </div>
-        <div class="order-row">
-          <label class="order-label" for="select-group-by">Group by</label>
-          <select id="select-group-by" class="order-select">
-            <option value="none">— no grouping —</option>
-          </select>
+        <div class="subsection-body" id="body-advanced">
+          <div class="subhead">Arrange rows</div>
+          <div class="order-controls">
+            <div class="order-row">
+              <label class="order-label" for="select-sort-by">Sort by</label>
+              <select id="select-sort-by" class="order-select">
+                <option value="none">— original order —</option>
+              </select>
+              <select id="select-sort-dir" class="order-dir" aria-label="Sort direction">
+                <option value="asc">↑ Asc</option>
+                <option value="desc">↓ Desc</option>
+              </select>
+            </div>
+            <div class="order-row">
+              <label class="order-label" for="select-group-by">Group by</label>
+              <select id="select-group-by" class="order-select">
+                <option value="none">— no grouping —</option>
+              </select>
+            </div>
+            <label class="switch-row" title="Merge rows that share the same group value and match on every other column, summing their numeric columns into one row">
+              <input type="checkbox" id="chk-consolidate" disabled>
+              <span class="track"></span>
+              <span class="switch-label">Combine matching rows</span>
+            </label>
+            <div class="hint">Group clusters rows with the same value together; sort orders rows within each group.
+              Combine merges rows that share a group value and every other column, summing the rest.</div>
+          </div>
+          <div class="filter-controls">
+            <div class="filter-row">
+              <label class="order-label" for="select-filter-by">Filter</label>
+              <select id="select-filter-by" class="order-select">
+                <option value="none">No filter</option>
+              </select>
+              <select id="select-filter-op" class="order-dir" aria-label="Filter operation">
+                <option value="contains">Contains</option>
+                <option value="equals">Equals</option>
+                <option value="not-equals">Not equals</option>
+                <option value="blank">Blank</option>
+                <option value="not-blank">Not blank</option>
+                <option value="gt">&gt; Greater than</option>
+                <option value="lt">&lt; Less than</option>
+                <option value="gte">&ge; Greater or equal</option>
+                <option value="lte">&le; Less or equal</option>
+              </select>
+            </div>
+            <input type="text" id="input-filter-value" class="filter-value" placeholder="Filter value">
+          </div>
         </div>
-        <label class="switch-row" title="Merge rows that share the same group value and match on every other column, summing their numeric columns into one row">
-          <input type="checkbox" id="chk-consolidate" disabled>
-          <span class="track"></span>
-          <span class="switch-label">Combine matching rows</span>
-        </label>
-        <div class="hint">Group clusters rows with the same value together; sort orders rows within each group.
-          Combine merges rows that share a group value and every other column, summing the rest.</div>
-      </div>
-      <div class="filter-controls">
-        <div class="filter-row">
-          <label class="order-label" for="select-filter-by">Filter</label>
-          <select id="select-filter-by" class="order-select">
-            <option value="none">No filter</option>
-          </select>
-          <select id="select-filter-op" class="order-dir" aria-label="Filter operation">
-            <option value="contains">Contains</option>
-            <option value="equals">Equals</option>
-            <option value="not-equals">Not equals</option>
-            <option value="blank">Blank</option>
-            <option value="not-blank">Not blank</option>
-            <option value="gt">&gt; Greater than</option>
-            <option value="lt">&lt; Less than</option>
-            <option value="gte">&ge; Greater or equal</option>
-            <option value="lte">&le; Less or equal</option>
-          </select>
-        </div>
-        <input type="text" id="input-filter-value" class="filter-value" placeholder="Filter value">
       </div>
       <div class="subhead">Format output</div>
       <div class="toggle-grid">

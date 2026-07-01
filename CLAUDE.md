@@ -104,7 +104,13 @@ above doesn't reach them.
   expanded, where it just spaces the chevron to the right). Only **Upload auto-collapses**
   — after a file loads (`handleFile`), on a remembered-file restore, and re-expands on
   `clearFile`. Headers is collapsible by click but never auto-collapses. Both heads toggle
-  on click / Enter / Space.
+  on click / Enter / Space. The same pattern nests one level deeper for **Advanced options**
+  (`#subsection-advanced` / `#head-advanced`, styled via `.subsection`/`.subsection-head`
+  rather than `.module`/`.module-head`) inside the Copy module — it wraps Sort/Group/Combine/
+  Filter, starts collapsed on every popup open (state isn't persisted), and its
+  `#advanced-summary` line (filled in `updateSummaries()`, refreshed from `renderPreview()`
+  since nearly every relevant control change already calls it) reads "Grouped", "Sorted",
+  "Filtered" (or combinations, or "No changes") so the settings are visible without opening it.
 - **Step 2 editing model**: the red header bubbles (above) are the primary editor once
   headers exist; the `<textarea>` is still the source of truth but tucks behind an
   **"Edit as text"** toggle (`#btn-toggle-text` → `updateHeadersView`, session-only

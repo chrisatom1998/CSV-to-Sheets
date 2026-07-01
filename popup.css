@@ -913,6 +913,46 @@ textarea:focus, select:focus {
 .module.collapsed .module-head { margin-bottom: 0; }
 .module.collapsed .module-body { display: none; }
 
+/* ---------------- Advanced options (nested collapsible) ---------------- */
+/* Same fold/summary/chevron pattern as the module heads above, scaled down for
+   a subsection nested inside a module (e.g. sort/group/filter in Copy & paste). */
+.subsection-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  margin: 15px 0 6px;
+}
+.subsection-head:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 8px;
+}
+.subsection-head h3 {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: var(--g-grey-400);
+}
+.subsection-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--g-grey-500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.subsection-head .collapse-chevron { width: 15px; height: 15px; }
+.subsection.collapsed .collapse-chevron { transform: rotate(-90deg); }
+.subsection.collapsed .subsection-body { display: none; }
+.subsection.collapsed .subsection-head { margin-bottom: 0; }
+
 /* ---------------- Headers: pills + text toggle ---------------- */
 /* Remove (×) inside each reorder pill — pills are the primary header editor. */
 .target-remove {

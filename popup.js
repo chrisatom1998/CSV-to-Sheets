@@ -38,6 +38,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const headHeaders = document.getElementById('head-headers');
   const uploadSummary = document.getElementById('upload-summary');
   const headersSummary = document.getElementById('headers-summary');
+  const subsectionAdvanced = document.getElementById('subsection-advanced');
+  const headAdvanced = document.getElementById('head-advanced');
+  const advancedSummary = document.getElementById('advanced-summary');
   const headersTextEdit = document.getElementById('headers-text-edit');
   const btnToggleText = document.getElementById('btn-toggle-text');
   const btnPresetMenu = document.getElementById('btn-preset-menu');
@@ -229,7 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function toggleCollapsed(section, head) {
     setCollapsed(section, head, !section.classList.contains('collapsed'));
   }
-  [[headUpload, moduleUpload], [headHeaders, moduleHeaders]].forEach(([head, section]) => {
+  [[headUpload, moduleUpload], [headHeaders, moduleHeaders], [headAdvanced, subsectionAdvanced]].forEach(([head, section]) => {
     head.addEventListener('click', () => toggleCollapsed(section, head));
     head.addEventListener('keydown', e => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCollapsed(section, head); }
@@ -261,6 +264,15 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } else {
       headersSummary.textContent = '';
+    }
+    if (subsectionAdvanced.classList.contains('collapsed')) {
+      const parts = [];
+      if (selectGroupBy.value !== 'none') parts.push(chkConsolidate.checked ? 'Grouped + combined' : 'Grouped');
+      if (selectSortBy.value !== 'none') parts.push('Sorted');
+      if (selectFilterBy.value !== 'none') parts.push('Filtered');
+      advancedSummary.textContent = parts.length ? parts.join(' · ') : 'No changes';
+    } else {
+      advancedSummary.textContent = '';
     }
   }
 
@@ -1290,6 +1302,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderPreview() {
+    updateSummaries(); // sort/group/filter selects may have just changed
     const targets = getTargets();
     hideCopyFallback();
     if (csvHeaders.length === 0 || targets.length === 0) {
