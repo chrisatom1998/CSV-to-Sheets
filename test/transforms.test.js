@@ -346,6 +346,7 @@ test('summarizeRows: labelIndex -1 preserves numeric total columns', () => {
   ]);
 });
 
+<<<<<<< HEAD
 const { toCSV } = require('../transforms.js');
 
 test('toCSV: joins cells with commas and rows with CRLF', () => {
@@ -407,3 +408,21 @@ test('consolidateRows: preserves first-occurrence order of groups', () => {
     ['a', '1']
   ]);
 });
+=======
+const { buildCSV } = require('../transforms.js');
+
+test('buildCSV: normalizes and escapes cells correctly', () => {
+  const matrix = [
+    ['Header 1', 'Header 2', 'Header 3'],
+    ['plain value', 'value, with comma', 'value "with" quotes'],
+    ['value\nwith newline', 'normal', '']
+  ];
+  const expected = [
+    'Header 1,Header 2,Header 3',
+    'plain value,"value, with comma","value ""with"" quotes"',
+    '"value\nwith newline",normal,'
+  ].join('\n');
+  assert.strictEqual(buildCSV(matrix), expected);
+});
+
+>>>>>>> origin/main
