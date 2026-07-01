@@ -113,6 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // point so the user can see where the bubble will land on drop.
   let _dragPlaceholder = null;   // the single placeholder DOM element
   let _dragSourceIndex = -1;     // index of the bubble currently being dragged
+  let _dragInsertIndex = -1;     // where the bubble would land if dropped now
 
   function getDragPlaceholder(text) {
     if (!_dragPlaceholder) {
@@ -128,7 +129,49 @@ document.addEventListener('DOMContentLoaded', () => {
       _dragPlaceholder.parentNode.removeChild(_dragPlaceholder);
     }
     _dragSourceIndex = -1;
+    _dragInsertIndex = -1;
   }
+
+  // Compute the real insertion index by looking at where the placeholder sits
+  // among the .header-bubble children of the container.
+  function computeInsertIndex() {
+    if (!_dragPlaceholder || !_dragPlaceholder.parentNode) return _dragSourceIndex;
+    const container = _dragPlaceholder.parentNode;
+    // Collect all header-bubbles and the placeholder in DOM order
+    const children = Array.from(container.children);
+    // Count how many non-dragging header-bubbles appear before the placeholder
+    let idx = 0;
+    for (const child of children) {
+      if (child === _dragPlaceholder) break;
+      if (child.classList.contains('header-bubble') && !child.classList.contains('dragging')) {
+        idx++;
+      }
+    }
+    return idx;
+  }
+
+  // Perform the drop using the tracked insertion index.
+  function executeDrop() {
+    if (_dragSourceIndex < 0 || _dragInsertIndex < 0) return;
+    const from = _dragSourceIndex;
+    const to = _dragInsertIndex;
+    removeDragPlaceholder();
+    if (from !== to) reorderTargets(from, to);
+  }
+
+  // Container-level dragover/drop (one-time setup) so drops landing in gaps
+  // between bubbles (or on the pointer-events:none placeholder) still work.
+  presetChips.addEventListener('dragover', e => {
+    if (_dragSourceIndex < 0) return;  // not a header-bubble drag
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  });
+  presetChips.addEventListener('drop', e => {
+    if (_dragSourceIndex < 0) return;  // not a header-bubble drag
+    e.preventDefault();
+    _dragInsertIndex = computeInsertIndex();
+    executeDrop();
+  });
 
   // ----------------- CSV parsing -----------------
   // CSV parsing, delimiter detection, and header-name matching are pure,
@@ -1548,6 +1591,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', String(index));
         _dragSourceIndex = index;
+        _dragInsertIndex = index;
         // Insert placeholder next to the dragged bubble on the next frame
         // (requestAnimationFrame ensures the browser captures the drag image first).
         requestAnimationFrame(() => {
@@ -1571,11 +1615,13 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
           bubble.after(ph);
         }
+        _dragInsertIndex = computeInsertIndex();
       });
       bubble.addEventListener('drop', e => {
         e.preventDefault();
-        removeDragPlaceholder();
-        reorderTargets(Number(e.dataTransfer.getData('text/plain')), index);
+        e.stopPropagation();
+        _dragInsertIndex = computeInsertIndex();
+        executeDrop();
       });
 
       bubble.addEventListener('keydown', e => {
